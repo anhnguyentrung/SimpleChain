@@ -36,7 +36,7 @@ func CreateNewAccount(a AccountName, creator AccountName, publicKey crypto.Publi
 	}
 	return &Action{
 		creator,
-		new_account,
+		NEW_ACCOUNT,
 		permissions,
 		NewActionData(newAccount),
 	}
