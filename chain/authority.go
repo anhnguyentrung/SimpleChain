@@ -1,12 +1,14 @@
 package chain
 
+import "blockchain/crypto"
+
 type PermissionLevelWeight struct {
 	Permission 	PermissionLevel
 	Weight 		uint16
 }
 
 type KeyWeight struct {
-	Key 	string
+	Key 	crypto.PublicKey
 	Weight 	uint16
 }
 

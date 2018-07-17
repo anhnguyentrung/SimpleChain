@@ -1,13 +1,28 @@
 package chain
 
 type PermissionLevel struct {
-	Actor string
-	Permission string
+	Actor AccountName
+	Permission PermissionName
 }
 
 type Action struct {
-	Account 		string
-	Name 			string
+	Account 		AccountName
+	Name 			ActionName
 	Authorization 	[]PermissionLevel
-	Data 			[]byte
+	Data 			ActionData
+}
+
+type ActionData struct {
+	HexData  []byte
+	Data     interface{}
+	abi      []byte
+	toServer bool
+}
+
+func NewActionData(obj interface{}) ActionData {
+	return ActionData{
+		HexData:  []byte{},
+		Data:     obj,
+		toServer: true,
+	}
 }

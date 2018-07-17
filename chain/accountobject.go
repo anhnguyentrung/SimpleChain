@@ -1,9 +1,8 @@
 package chain
 
-type Account struct {
+type AccountObject struct {
 	Id 		uint64
-	Name	string
+	Name	AccountName
 	Code 	[]byte
 	Abi 	string
 }
-
