@@ -129,6 +129,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		rv.SetString(name)
 		return
 	case *byte:
+		//fmt.Println("*byte")
 		var n byte
 		n, err = d.readByte()
 		rv.SetUint(uint64(n))
@@ -159,6 +160,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		rv.SetBool(r)
 		return
 	case *[]byte:
+		fmt.Println("*[]byte")
 		var data []byte
 		data, err = d.readByteArray()
 		rv.SetBytes(data)
@@ -180,7 +182,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 
 	switch t.Kind() {
 	case reflect.Array:
-		print("Array")
+		fmt.Println("Array")
 		len := t.Len()
 		for i := 0; i < int(len); i++ {
 			if err = d.Decode(rv.Index(i).Addr().Interface()); err != nil {
@@ -190,7 +192,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		return
 
 	case reflect.Slice:
-		print("Reading Slice length ")
+		fmt.Println("Reading Slice length ")
 		var l uint64
 		if l, err = d.readUvarint(); err != nil {
 			return
@@ -204,16 +206,17 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		}
 
 	case reflect.Struct:
-
+		fmt.Println("Struct")
 		err = d.decodeStruct(v, t, rv)
 		if err != nil {
 			return
 		}
 
 	case reflect.Map:
-		//fmt.Println("Map")
+		fmt.Println("Map")
 		var l uint64
 		if l, err = d.readUvarint(); err != nil {
+			fmt.Println(err)
 			return
 		}
 		kt := t.Key()
@@ -302,7 +305,7 @@ func (d *Decoder) readByte() (out byte, err error) {
 
 	out = d.data[d.pos]
 	d.pos++
-	println(fmt.Sprintf("readByte [%d]", out))
+	//fmt.Println(fmt.Sprintf("readByte [%d]", out))
 	return
 }
 

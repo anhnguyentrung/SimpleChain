@@ -63,16 +63,6 @@ func (p *PrivateKey) Sign(hash []byte) (*Signature, error) {
 	return signRFC6979(p, hash, 0)
 }
 
-// PrivKeyBytesLen defines the length in bytes of a serialized private key.
-const PrivKeyBytesLen = 32
-
-// Serialize returns the private key number d as a big-endian binary-encoded
-// number, padded to a length of 32 bytes.
-func (p *PrivateKey) Serialize() []byte {
-	b := make([]byte, 0, PrivKeyBytesLen)
-	return paddedAppend(PrivKeyBytesLen, b, p.ToECDSA().D.Bytes())
-}
-
 // SignCanonical goes through signatures and returns only a canonical
 // representations.  This matches the EOS blockchain expectations.
 func (p *PrivateKey) SignCanonical(curve *KoblitzCurve, hash []byte) ([]byte, error) {
@@ -94,6 +84,16 @@ func (p *PrivateKey) SignCanonical(curve *KoblitzCurve, hash []byte) ([]byte, er
 	return nil, errors.New("couldn't find a canonical signature")
 }
 
+// PrivKeyBytesLen defines the length in bytes of a serialized private key.
+const PrivKeyBytesLen = 32
+
+// Serialize returns the private key number d as a big-endian binary-encoded
+// number, padded to a length of 32 bytes.
+func (p *PrivateKey) Serialize() []byte {
+	b := make([]byte, 0, PrivKeyBytesLen)
+	return paddedAppend(PrivKeyBytesLen, b, p.ToECDSA().D.Bytes())
+}
+
 func isCanonical(compactSig []byte) bool {
 	// From EOS's codebase, our way of doing Canonical sigs.
 	// https://steemit.com/steem/@dantheman/steem-and-bitshares-cryptographic-security-update
@@ -110,3 +110,4 @@ func isCanonical(compactSig []byte) bool {
 	t4 := !(d[33] == 0 && ((d[34] & 0x80) == 0))
 	return t1 && t2 && t3 && t4
 }
+

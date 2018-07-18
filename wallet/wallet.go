@@ -14,13 +14,29 @@ import (
 	"strings"
 	"io/ioutil"
 	"fmt"
+	"crypto/rand"
+	"crypto/cipher"
 )
+
+type PlainKeys struct {
+	Keys map[string]string
+	Checksum [64]byte
+}
 
 type SoftWallet struct {
 	CipherKeys []byte
-	Keys map[string]*crypto.PrivateKey
 	WalletName string
+	Keys map[string]*crypto.PrivateKey
 	Checksum [64]byte
+}
+
+func NewSoftWallet() *SoftWallet {
+	return &SoftWallet{
+		CipherKeys: make([]byte, 0),
+		WalletName:	"",
+		Keys: make(map[string]*crypto.PrivateKey, 0),
+		Checksum: sha512.Sum512([]byte("")),
+	}
 }
 
 func (sw *SoftWallet) GetPrivateKey(publicKey crypto.PublicKey) (*crypto.PrivateKey, error) {
@@ -39,7 +55,8 @@ func (sw *SoftWallet) tryGetPrivateKey(publicKey string) *crypto.PrivateKey {
 }
 
 func (sw *SoftWallet) IsLocked() bool {
-	return bytes.Equal(sw.Checksum[:], make([]byte, 64, 64))
+	checksum := sha512.Sum512([]byte(""))
+	return bytes.Equal(sw.Checksum[:], checksum[:])
 }
 
 func (sw *SoftWallet) Lock() {
@@ -48,49 +65,52 @@ func (sw *SoftWallet) Lock() {
 	for k := range sw.Keys {
 		delete(sw.Keys, k)
 	}
-	sw.Checksum = [64]byte{}
+	sw.Checksum = sha512.Sum512([]byte(""))
 }
 
 func (sw *SoftWallet) UnLock(password string) {
 	if len(password) == 0 { log.Fatal("password must not empty") }
 	pw := sha512.Sum512([]byte(password))
-	block, err := aes.NewCipher(pw[:])
+	block, err := aes.NewCipher(pw[0:32])
 	if err != nil {
 		log.Fatal("error: %s", err)
 	}
-	var decrypted []byte
-	block.Decrypt(decrypted, sw.CipherKeys)
+	decrypted := make([]byte, len(sw.CipherKeys[aes.BlockSize:]))
+	decryptStream := cipher.NewCTR(block, sw.CipherKeys[:aes.BlockSize])
+	decryptStream.XORKeyStream(decrypted, sw.CipherKeys[aes.BlockSize:])
+	fmt.Println(string(decrypted))
 	decoder := chain.NewDecoder(decrypted)
-	var savedWallet SoftWallet
-	err = decoder.Decode(&savedWallet)
+	var plainKeys PlainKeys
+	err = decoder.Decode(&plainKeys)
 	if err != nil {
-		log.Fatal("unpacking key data")
+		log.Fatal(err)
 	}
-	if !bytes.Equal(savedWallet.Checksum[:], pw[:]) {
+	if !bytes.Equal(plainKeys.Checksum[:], pw[:]) {
 		log.Fatal("password is wrong")
 	}
-	for k := range savedWallet.Keys {
-		sw.Keys[k] = savedWallet.Keys[k]
+	for k := range plainKeys.Keys {
+		privateKey, _ := crypto.NewPrivateKey(plainKeys.Keys[k])
+		sw.Keys[k] = privateKey
 	}
-	sw.Checksum = savedWallet.Checksum
+	sw.Checksum = plainKeys.Checksum
 }
 
 func (sw *SoftWallet) CheckPassword(password string) {
 	if len(password) == 0 { log.Fatal("password must not empty") }
 	pw := sha512.Sum512([]byte(password))
-	block, err := aes.NewCipher(pw[:])
+	block, err := aes.NewCipher(pw[0:32])
 	if err != nil {
 		log.Fatal("error: %s", err)
 	}
-	var decrypted []byte
+	decrypted := make([]byte, len(sw.CipherKeys))
 	block.Decrypt(decrypted, sw.CipherKeys)
 	decoder := chain.NewDecoder(decrypted)
-	var savedWallet SoftWallet
-	err = decoder.Decode(&savedWallet)
+	var plainKeys PlainKeys
+	err = decoder.Decode(&plainKeys)
 	if err != nil {
 		log.Fatal("unpacking key data")
 	}
-	if !bytes.Equal(savedWallet.Checksum[:], pw[:]) {
+	if !bytes.Equal(plainKeys.Checksum[:], pw[:]) {
 		log.Fatal("password is wrong")
 	}
 }
@@ -185,12 +205,26 @@ func (sw *SoftWallet) LoadWalletFile() error {
 
 func (sw *SoftWallet) EncryptKeys() {
 	if !sw.IsLocked() {
-		buf, _ := chain.MarshalBinary(*sw)
-		block, err := aes.NewCipher(sw.Checksum[:])
+		plainKeys := PlainKeys{
+			Keys: make(map[string]string, 0),
+			Checksum: sw.Checksum,
+		}
+		for k := range sw.Keys {
+			plainKeys.Keys[k] = sw.Keys[k].String()
+		}
+		buf, _ := chain.MarshalBinary(plainKeys)
+		fmt.Println(string(buf))
+		block, err := aes.NewCipher(sw.Checksum[0:32])
 		if err != nil {
 			log.Fatal("error: %s", err)
 		}
-		block.Encrypt(sw.CipherKeys, buf)
+		sw.CipherKeys = make([]byte, aes.BlockSize+len(buf))
+		iv := sw.CipherKeys[:aes.BlockSize]
+		if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+			fmt.Printf("err: %s\n", err)
+		}
+		encryptStream := cipher.NewCTR(block, iv)
+		encryptStream.XORKeyStream(sw.CipherKeys[aes.BlockSize:], buf)
 	}
 }
 

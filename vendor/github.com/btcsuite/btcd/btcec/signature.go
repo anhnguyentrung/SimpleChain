@@ -342,12 +342,16 @@ func recoverKeyFromSignature(curve *KoblitzCurve, sig *Signature, msg []byte,
 // returned in the format:
 // <(byte of 27+public key solution)+4 if compressed >< padded bytes for signature R><padded bytes for signature S>
 // where the R and S parameters are padde up to the bitlengh of the curve.
-func SignCompact(curve *KoblitzCurve, key *PrivateKey,
-	hash []byte, isCompressedKey bool) ([]byte, error) {
+func SignCompact(curve *KoblitzCurve, key *PrivateKey, hash []byte, isCompressedKey bool) ([]byte, error) {
 	sig, err := key.Sign(hash)
 	if err != nil {
 		return nil, err
 	}
+
+	// See: https://github.com/cryptonomex/secp256k1-zkp/blob/secp256k1-zkp/src/secp256k1.c#L187
+	// See: https://github.com/EOSIO/eos/blob/master/libraries/fc/src/crypto/elliptic_impl_priv.cpp#L96
+	// See: https://github.com/EOSIO/eosjs-ecc/blob/master/src/signature.js#L178
+	// See: https://github.com/btcsuite/btcd/blob/master/btcec/signature.go#L355
 
 	// bitcoind checks the bit length of R and S here. The ecdsa signature
 	// algorithm returns R and S mod N therefore they will be the bitsize of
