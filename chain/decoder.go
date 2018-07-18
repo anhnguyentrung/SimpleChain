@@ -213,7 +213,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		}
 
 	case reflect.Map:
-		fmt.Println("Map")
+		fmt.Println("Decode Map")
 		var l uint64
 		if l, err = d.readUvarint(); err != nil {
 			fmt.Println(err)
@@ -266,7 +266,6 @@ func (d *Decoder) decodeStruct(v interface{}, t reflect.Type, rv reflect.Value) 
 var ErrVarIntBufferSize = errors.New("varint: invalid buffer size")
 
 func (d *Decoder) readUvarint() (uint64, error) {
-
 	l, read := binary.Uvarint(d.data[d.pos:])
 	if read <= 0 {
 		println(fmt.Sprintf("readUvarint [%d]", l))

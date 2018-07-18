@@ -14,7 +14,7 @@ func main() {
 	checkLock(sw)
 	sw.UnLock("pass")
 	checkUnLock(sw)
-	sw.WalletName = "test"
+	sw.WalletName = "wallet_test.json"
 	if len(sw.ListPublicKeys()) > 0 {
 		log.Fatal("should not contain key")
 	}
@@ -36,6 +36,20 @@ func main() {
 	checkUnLock(sw)
 	if len(sw.ListPublicKeys()) != 1 {
 		log.Fatal("contain too much key")
+	}
+	sw.SaveWalletFile()
+	sw2 := wallet.NewSoftWallet()
+	sw2.WalletName = "wallet_test.json"
+	checkLock(sw2)
+	sw2.LoadWalletFile()
+	checkLock(sw2)
+	sw2.UnLock("pass")
+	if len(sw2.ListPublicKeys()) != 1 {
+		log.Fatal("contain too much key")
+	}
+	privCopy2,_ := sw.GetPrivateKey(pub)
+	if privCopy2.String() != wif {
+		log.Fatal("private key not same")
 	}
 }
 

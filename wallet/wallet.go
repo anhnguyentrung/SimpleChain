@@ -23,6 +23,10 @@ type PlainKeys struct {
 	Checksum [64]byte
 }
 
+type WalletData struct {
+	CipherKeys []byte
+}
+
 type SoftWallet struct {
 	CipherKeys []byte
 	WalletName string
@@ -78,7 +82,7 @@ func (sw *SoftWallet) UnLock(password string) {
 	decrypted := make([]byte, len(sw.CipherKeys[aes.BlockSize:]))
 	decryptStream := cipher.NewCTR(block, sw.CipherKeys[:aes.BlockSize])
 	decryptStream.XORKeyStream(decrypted, sw.CipherKeys[aes.BlockSize:])
-	fmt.Println(string(decrypted))
+	//fmt.Println("decrypt",len(decrypted))
 	decoder := chain.NewDecoder(decrypted)
 	var plainKeys PlainKeys
 	err = decoder.Decode(&plainKeys)
@@ -176,7 +180,10 @@ func (sw *SoftWallet) IsNew() bool {
 
 func (sw *SoftWallet) SaveWalletFile() error {
 	sw.EncryptKeys()
-	data, err := json.Marshal(sw)
+	walletData := &WalletData{
+		CipherKeys: sw.CipherKeys,
+	}
+	data, err := json.Marshal(walletData)
 	if err != nil {
 		return err
 	}
@@ -195,11 +202,16 @@ func (sw *SoftWallet) SaveWalletFile() error {
 func (sw *SoftWallet) LoadWalletFile() error {
 	fi, err := os.Open(sw.WalletName)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 	defer fi.Close()
 	data, _ := ioutil.ReadAll(fi)
-	json.Unmarshal(data, sw)
+	walletData := &WalletData{
+		CipherKeys: make([]byte, 0),
+	}
+	json.Unmarshal(data, walletData)
+	sw.CipherKeys = walletData.CipherKeys
 	return nil
 }
 
@@ -213,7 +225,7 @@ func (sw *SoftWallet) EncryptKeys() {
 			plainKeys.Keys[k] = sw.Keys[k].String()
 		}
 		buf, _ := chain.MarshalBinary(plainKeys)
-		fmt.Println(string(buf))
+		//fmt.Println("encrypt", len(buf))
 		block, err := aes.NewCipher(sw.Checksum[0:32])
 		if err != nil {
 			log.Fatal("error: %s", err)

@@ -51,6 +51,8 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 	case ScopeName:
 		name := Name(cv)
 		return e.writeName(name)
+	case string:
+		return e.writeString(cv)
 	case byte:
 		return e.writeByte(cv)
 	case int8:
@@ -147,11 +149,12 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 			//prefix = prefix[:len(prefix)-1]
 
 		case reflect.Map:
+			fmt.Println("Encode Map")
 			l := rv.Len()
 			if err = e.writeUVarInt(l); err != nil {
 				return
 			}
-			println(fmt.Sprintf("Map [%T] of length: %d", v, l))
+			fmt.Println(fmt.Sprintf("Map [%T] of length: %d", v, l))
 			for _, key := range rv.MapKeys() {
 				value := rv.MapIndex(key)
 				if err = e.Encode(key.Interface()); err != nil {
