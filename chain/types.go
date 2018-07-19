@@ -6,7 +6,17 @@ type PermissionName Name
 type ActionName Name
 type TableName Name
 type ScopeName Name
+type bytes []byte
 
 const NEW_ACCOUNT  = "newaccount"
-const WALLET_FILENAME_EXTENSION = ".wallet"
-const DEFAULT_KEY_TYPE = "K1"
+
+type Extension struct {
+	Type uint16
+	Buffer []byte
+}
+
+type CompressionType uint8
+const(
+	None CompressionType = iota
+	Zlib
+)
