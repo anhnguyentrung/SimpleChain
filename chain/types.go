@@ -27,9 +27,9 @@ const(
 
 type TransactionStatus uint8
 const(
-	Executed TransactionStatus = iota // succeed, no error handler executed
-	Soft_Fail // objectively failed (not executed), error handler executed
-	Hard_Fail // objectively failed and error handler objectively failed thus no state change
-	Delayed // transaction delayed/deferred/scheduled for future execution
-	Expired  // transaction expired and storage space refuned to user
+	Executed TransactionStatus = iota 	// succeed, no error handler executed
+	Soft_Fail 							// objectively failed (not executed), error handler executed
+	Hard_Fail 							// objectively failed and error handler objectively failed thus no state change
+	Delayed 							// transaction delayed/deferred/scheduled for future execution
+	Expired  							// transaction expired and storage space refuned to user
 )
