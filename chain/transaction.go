@@ -13,9 +13,9 @@ type TransactionHeader struct{
 	Expiration time.Time
 	RefBlockNum uint16
 	RefBlockPrefix uint16
-	MaxNetUsageWords uint32 // 1 word = 8 bytes
+	MaxNetUsageWords Varuint32 // 1 word = 8 bytes
 	MaxCPUUsageMs uint8
-	DelaySec uint32
+	DelaySec Varuint32
 }
 
 type Transaction struct {
