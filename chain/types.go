@@ -9,6 +9,8 @@ type ScopeName Name
 type bytes []byte
 
 const NEW_ACCOUNT  = "newaccount"
+const OWNER = "owner"
+const ACTIVE = "active"
 
 type Extension struct {
 	Type uint16

@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"crypto/sha256"
 	"encoding/json"
+	"blockchain/chain"
 )
 
 const PrivateKeyPrefix = "PVT_"
@@ -34,6 +35,15 @@ func newRandomPrivateKey(randSource io.Reader) (*PrivateKey, error) {
 
 	h := sha256.New()
 	h.Write(rawPrivKey)
+	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), h.Sum(nil))
+
+	return &PrivateKey{Curve: CurveK1, privKey: privKey}, nil
+}
+
+func NewPrivateKeyForAccount(accountName chain.AccountName, role string) (*PrivateKey, error) {
+	rawPrivKey := sha256.Sum256([]byte(string(accountName) + role))
+	h := sha256.New()
+	h.Write(rawPrivKey[:])
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), h.Sum(nil))
 
 	return &PrivateKey{Curve: CurveK1, privKey: privKey}, nil
