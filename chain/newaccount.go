@@ -13,7 +13,7 @@ func CreateNewAccount(a AccountName, creator AccountName) *Action {
 	permissions := []PermissionLevel{
 		{Actor:creator, Permission:"active"},
 	}
-	ownerPrivateKey, _ := crypto.NewPrivateKeyForAccount(a, OWNER)
+	ownerPrivateKey, _ := crypto.NewPrivateKeyForAccount(string(a), OWNER)
 	ownerPublicKey := ownerPrivateKey.PublicKey()
 	owner := Authority{
 		Threshold:	1,
@@ -22,7 +22,7 @@ func CreateNewAccount(a AccountName, creator AccountName) *Action {
 		},
 		Accounts:	[]PermissionLevelWeight{},
 	}
-	activePrivateKey, _ := crypto.NewPrivateKeyForAccount(a, ACTIVE)
+	activePrivateKey, _ := crypto.NewPrivateKeyForAccount(string(a), ACTIVE)
 	activePublicKey := activePrivateKey.PublicKey()
 	active := Authority{
 		Threshold:	1,

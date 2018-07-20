@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"errors"
 	"encoding/hex"
-	"bytes"
+	bytes2 "bytes"
 )
 
 type Encoder struct {
@@ -271,7 +271,7 @@ func (e *Encoder) writeActionData(actionData ActionData) (err error) {
 }
 
 func MarshalBinary(v interface{}) ([]byte, error) {
-	buf := new(bytes.Buffer)
+	buf := new(bytes2.Buffer)
 	encoder := NewEncoder(buf)
 	err := encoder.Encode(v)
 	return buf.Bytes(), err

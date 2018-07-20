@@ -23,3 +23,7 @@ const (
 	Last_Irr_Catch_Up
 	Normal
 )
+
+const TCP  = "tcp"
+
+type Message interface {}
