@@ -2,12 +2,12 @@ package crypto
 
 import (
 	cryptorand "crypto/rand"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/chaincfg"
+	"blockchain/btcsuite/btcd/btcec"
+	"blockchain/btcsuite/btcd/chaincfg"
 	"io"
 	"fmt"
 	"strings"
-	"github.com/btcsuite/btcutil"
+	"blockchain/btcsuite/btcutil"
 	"crypto/sha256"
 	"encoding/json"
 )

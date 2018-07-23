@@ -2,8 +2,8 @@ package crypto
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcutil/base58"
-	"github.com/btcsuite/btcd/btcec"
+	"blockchain/btcsuite/btcutil/base58"
+	"blockchain/btcsuite/btcd/btcec"
 	"strings"
 	"bytes"
 	"encoding/json"

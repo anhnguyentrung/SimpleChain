@@ -342,16 +342,24 @@ func recoverKeyFromSignature(curve *KoblitzCurve, sig *Signature, msg []byte,
 // returned in the format:
 // <(byte of 27+public key solution)+4 if compressed >< padded bytes for signature R><padded bytes for signature S>
 // where the R and S parameters are padde up to the bitlengh of the curve.
-func SignCompact(curve *KoblitzCurve, key *PrivateKey,
-	hash []byte, isCompressedKey bool) ([]byte, error) {
+func SignCompact(curve *KoblitzCurve, key *PrivateKey, hash []byte, isCompressedKey bool) ([]byte, error) {
 	sig, err := key.Sign(hash)
 	if err != nil {
 		return nil, err
 	}
 
+	// See: https://github.com/cryptonomex/secp256k1-zkp/blob/secp256k1-zkp/src/secp256k1.c#L187
+	// See: https://github.com/EOSIO/eos/blob/master/libraries/fc/src/crypto/elliptic_impl_priv.cpp#L96
+	// See: https://github.com/EOSIO/eosjs-ecc/blob/master/src/signature.js#L178
+	// See: https://github.com/btcsuite/btcd/blob/master/btcec/signature.go#L355
+
 	// bitcoind checks the bit length of R and S here. The ecdsa signature
 	// algorithm returns R and S mod N therefore they will be the bitsize of
 	// the curve, and thus correctly sized.
+	return makeCompact(curve, sig, key, hash, isCompressedKey)
+}
+
+func makeCompact(curve *KoblitzCurve, sig *Signature, key *PrivateKey, hash []byte, isCompressedKey bool) ([]byte, error) {
 	for i := 0; i < (curve.H+1)*2; i++ {
 		pk, err := recoverKeyFromSignature(curve, sig, hash, i, true)
 		if err == nil && pk.X.Cmp(key.X) == 0 && pk.Y.Cmp(key.Y) == 0 {
@@ -413,12 +421,12 @@ func RecoverCompact(curve *KoblitzCurve, signature,
 }
 
 // signRFC6979 generates a deterministic ECDSA signature according to RFC 6979 and BIP 62.
-func signRFC6979(privateKey *PrivateKey, hash []byte) (*Signature, error) {
+func signRFC6979(privateKey *PrivateKey, hash []byte, nonce int) (*Signature, error) {
 
 	privkey := privateKey.ToECDSA()
 	N := S256().N
 	halfOrder := S256().halfOrder
-	k := nonceRFC6979(privkey.D, hash)
+	k := nonceRFC6979(privkey.D, hash, nonce)
 	inv := new(big.Int).ModInverse(k, N)
 	r, _ := privkey.Curve.ScalarBaseMult(k.Bytes())
 	if r.Cmp(N) == 1 {
@@ -446,7 +454,13 @@ func signRFC6979(privateKey *PrivateKey, hash []byte) (*Signature, error) {
 
 // nonceRFC6979 generates an ECDSA nonce (`k`) deterministically according to RFC 6979.
 // It takes a 32-byte hash as an input and returns 32-byte nonce to be used in ECDSA algorithm.
-func nonceRFC6979(privkey *big.Int, hash []byte) *big.Int {
+func nonceRFC6979(privkey *big.Int, hash []byte, nonce int) *big.Int {
+	if nonce > 0 {
+		moreHash := sha256.New()
+		moreHash.Write(hash)
+		moreHash.Write(bytes.Repeat([]byte{0x00}, nonce))
+		hash = moreHash.Sum(nil)
+	}
 
 	curve := S256()
 	q := curve.Params().N
