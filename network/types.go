@@ -27,3 +27,6 @@ const (
 const TCP  = "tcp"
 
 type Message interface {}
+type MessagePacket struct {
+	Message Message
+}

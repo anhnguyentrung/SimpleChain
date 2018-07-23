@@ -27,14 +27,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/btcsuite/btcd"
-
-[[constraint]]
-  branch = "master"
-  name = "github.com/btcsuite/btcutil"
-
-[[constraint]]
-  branch = "master"
   name = "golang.org/x/crypto"
 
 [prune]

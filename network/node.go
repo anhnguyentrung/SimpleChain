@@ -12,6 +12,9 @@ import (
 	"time"
 	"crypto/sha256"
 	"runtime"
+	"log"
+	"io/ioutil"
+	"eos-go"
 )
 
 type Connection struct {
@@ -45,20 +48,28 @@ func (c *Connection) Close() {
 	c.Conn.Close()
 }
 
-type ConnectionStatus struct {
-	Peer string
-	Connecting bool
-	Syncing bool
-	LastHandshake HandshakeMessage
+func (c *Connection) sendMessage(message Message) error {
+	packet := MessagePacket{
+		Message: message,
+	}
+	encoder := chain.NewEncoder(c.Conn)
+	return encoder.Encode(packet)
 }
 
-func (c *Connection) Status() ConnectionStatus {
-	return ConnectionStatus{
-		Peer: c.PeerAddress,
-		Connecting: c.Connecting,
-		Syncing: c.Syncing,
-		LastHandshake: c.LastHandshakeReceived,
-	}
+type MessageHandlers struct {
+	OnHandshake func(c *Connection, message *HandshakeMessage)
+	OnChainSize func(c *Connection, message *ChainSizeMessage)
+	OnGoAway func(c *Connection, message *GoAwayMessage)
+	OnTime func(c *Connection, message *TimeMessage)
+	OnNotice func(c *Connection, message *NoticeMessage)
+	OnRequest func(c *Connection, message *RequestMessage)
+	OnSyncRequest func(c *Connection, message *SyncRequestMessage)
+	OnSignedBlock func(c *Connection, message *chain.SignedBlock)
+	OnPackedTransaction func(c *Connection, message *chain.PackedTransaction)
+}
+
+func (handlers *MessageHandlers) HandleMessage(packet *MessagePacket) {
+
 }
 
 type Node struct {
@@ -73,6 +84,7 @@ type Node struct {
 	InboundConns map[string]*Connection // p2p-listen-endpoint
 	OutboundConns map[string]*Connection // p2p-peer-address
 	NetworkVersion uint16
+	Handers MessageHandlers
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -109,10 +121,6 @@ func (node *Node) ListenFromPeers() error {
 		<- start
 	}
 	return nil
-}
-
-func (node *Node) FindOutboundConnection(host string) *Connection {
-	return node.OutboundConns[host]
 }
 
 func (node *Node) Close(c *Connection) {
@@ -152,12 +160,26 @@ func (node *Node) addNewOutbound(c *Connection) {
 	node.OutboundConns[c.PeerAddress] = c
 }
 
-func (node *Node) HandleConnection(c *Connection, start chan bool) {
+func (node *Node) HandleConnection(c *Connection, ready chan bool, errChan chan error) {
 	r := bufio.NewReader(c.Conn)
-	start <- true
+	ready <- true
 	for {
-		HandleMessage(r)
+		packet, err := decodeMessageData(r)
+		if err != nil {
+			log.Println("Error reading from p2p client:", err)
+			errChan <- err
+			return
+		}
+		node.Handers.HandleMessage(packet)
 	}
+}
+
+func decodeMessageData(r io.Reader) (packet *MessagePacket, err error) {
+	data, err := ioutil.ReadAll(r)
+	packet = &MessagePacket{}
+	decoder := chain.NewDecoder(data)
+	err = decoder.Decode(packet)
+	return
 }
 
 func (node *Node) SignCompact(signer crypto.PublicKey, digest chain.SHA256Type) crypto.Signature {
@@ -204,9 +226,5 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 
 func (node *Node) sendHandshake(c *Connection) {
 	c.LastHandshakeSent = node.newHandshakeMessage()
-}
-
-func HandleMessage(r io.Reader) {
-
 }
 
