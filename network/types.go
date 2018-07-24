@@ -24,6 +24,28 @@ const (
 	Normal
 )
 
-const TCP  = "tcp"
+type MessageTypes byte
+const (
+	Handshake = iota
+	ChainSize
+	GoAway
+	Time
+	Notice
+	Request
+	SyncRequest
+	SignedBlock
+	PackedTransaction
+)
 
-type Message interface {}
+const TCP  = "tcp"
+const MessageHeaderSize = 4
+
+type MessageType interface {}
+type MessageHeader struct {
+	Type 	byte // 1 byte
+	Length  uint32  	// 4 bytes
+}
+type Message struct {
+	Header MessageHeader
+	Content MessageType
+}

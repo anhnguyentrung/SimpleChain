@@ -12,8 +12,10 @@ import (
 	"time"
 	"crypto/sha256"
 	"runtime"
-	"log"
 	"io/ioutil"
+	"os"
+	"encoding/binary"
+	"log"
 )
 
 type Connection struct {
@@ -48,8 +50,15 @@ func (c *Connection) Close() {
 }
 
 func (c *Connection) sendMessage(message Message) error {
-	encoder := chain.NewEncoder(c.Conn)
-	return encoder.Encode(message)
+	buf, err := chain.MarshalBinary(message.Content)
+	if err != nil {
+		fmt.Println("Encode content: ", err)
+		return err
+	}
+	message.Header.Length = uint32(len(buf))
+	data, err := chain.MarshalBinary(message)
+	c.Conn.Write(data)
+	return err
 }
 
 type Packet struct {
@@ -88,8 +97,8 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 }
 
 func (node *Node) Start() {
-	node.ListenFromPeers()
-	//go node.ConnectToPeers()
+	go node.ConnectToPeers()
+	go node.ListenFromPeers()
 }
 
 // Receive message
@@ -104,6 +113,7 @@ func (node *Node) ListenFromPeers() error {
 			inboundConn, err := ln.Accept()
 			if err != nil {
 				fmt.Println("accepting connection: ", err)
+				os.Exit(1)
 			}
 			ic := NewConnection("")
 			ic.Conn = inboundConn
@@ -127,7 +137,7 @@ func (node *Node) ListenFromPeers() error {
 }
 
 func (node *Node) handleMessage(c *Connection, packet *Packet) {
-	switch msg := packet.message.(type) {
+	switch msg := packet.message.Content.(type) {
 	case HandshakeMessage:
 		c.LastHandshakeReceived = msg
 		node.handleHandshakeMessage(c, msg)
@@ -143,7 +153,7 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 }
 
 func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
-	fmt.Println("received handshake message")
+	fmt.Println("received handshake message", message.ChainId)
 }
 
 func (node *Node) Close(c *Connection) {
@@ -151,6 +161,7 @@ func (node *Node) Close(c *Connection) {
 }
 
 func (node *Node) ConnectToPeers() {
+	fmt.Println("connecting to peer ...")
 	for _, peerAddr := range node.SuppliedPeers {
 		c := NewConnection(peerAddr)
 		err := node.Connect(c)
@@ -172,7 +183,7 @@ func (node *Node) Connect(c *Connection) error {
 	}
 	c.Connecting = true
 	c.Conn = conn
-	node.addNewOutbound(c)
+	node.newConn <- c
 	return nil
 }
 
@@ -181,6 +192,7 @@ func (node *Node) addConnection(c *Connection) {
 		node.addNewInbound(c)
 	} else {
 		node.addNewOutbound(c)
+		node.sendHandshake(c)
 	}
 }
 
@@ -219,12 +231,81 @@ func (node *Node) removeInbound(c *Connection) {
 func (node *Node) handleConnection(c *Connection) {
 	r := bufio.NewReader(c.Conn)
 	for {
-		message, err := decodeMessageData(r)
+		typeBuf := make([]byte, 1, 1)
+		_, err := io.ReadFull(r, typeBuf)
 		if err != nil {
-			log.Println("Error reading from p2p client:", err)
+			fmt.Println("Type ", err)
 			break
 		}
-		packet := &Packet{connection: c, message: message}
+		msgType := typeBuf[0]
+		lenBuf := make([]byte, 4, 4)
+		_, err = io.ReadFull(r, lenBuf)
+		if err != nil {
+			log.Println("Length ", err)
+			break
+		}
+		length := binary.LittleEndian.Uint32(lenBuf)
+		fmt.Println("size of recevied message: ", length)
+		msgData := make([]byte, length, length)
+		n, err := io.ReadFull(r, msgData)
+		if uint32(n) != length {
+			fmt.Println("length of message is wrong")
+			break
+		}
+		msg := Message{
+			Header:MessageHeader{
+				Type:msgType,
+				Length:length,
+			},
+		}
+		switch msgType {
+		case Handshake:
+			var msgContent HandshakeMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content = msgContent
+		case ChainSize:
+			var msgContent ChainSizeMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case GoAway:
+			var msgContent GoAwayMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case Time:
+			var msgContent TimeMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case Notice:
+			var msgContent NoticeMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case Request:
+			var msgContent RequestMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case SyncRequest:
+			var msgContent SyncRequestMessage
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case SignedBlock:
+			var msgContent chain.SignedBlock
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		case PackedTransaction:
+			var msgContent chain.PackedTransaction
+			decoder := chain.NewDecoder(msgData)
+			err = decoder.Decode(&msgContent)
+			msg.Content= msgContent
+		}
+		packet := &Packet{connection: c, message: msg}
 		node.newPacket <- packet
 	}
 	node.doneConn <- c
@@ -279,7 +360,21 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 	}
 }
 
-func (node *Node) sendHandshake(c *Connection) {
-	c.LastHandshakeSent = node.newHandshakeMessage()
+func (node *Node) sendHandshake(c *Connection) (err error) {
+	handshakeMsg := node.newHandshakeMessage()
+	c.LastHandshakeSent = handshakeMsg
+	msg := Message{
+		Header: MessageHeader{
+			Type:Handshake,
+			Length:0,
+		},
+		Content:handshakeMsg,
+	}
+	fmt.Println("sending handshake to ", c.RemoteAddr().String())
+	err = c.sendMessage(msg)
+	if err != nil {
+		fmt.Println("error occurred when sending message")
+	}
+	return
 }
 

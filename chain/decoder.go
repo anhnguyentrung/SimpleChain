@@ -179,21 +179,25 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		rv.Set(reflect.ValueOf(action))
 		return
 	case *SHA256Type:
+		fmt.Println("SHA256Type")
 		var s SHA256Type
 		s, err = d.readSHA256()
-		rv.SetBytes(s[:])
+		rv.Set(reflect.ValueOf(s))
 		return
 	case *crypto.PublicKey:
+		fmt.Println("PublicKey")
 		var p crypto.PublicKey
 		p, err = d.readPublicKey()
 		rv.Set(reflect.ValueOf(p))
 		return
 	case *crypto.Signature:
+		fmt.Println("Signature")
 		var s crypto.Signature
 		s, err = d.readSignature()
 		rv.Set(reflect.ValueOf(s))
 		return
 	case *time.Time:
+		fmt.Println("Time")
 		var ts time.Time
 		ts, err = d.readTimestamp()
 		rv.Set(reflect.ValueOf(ts))
