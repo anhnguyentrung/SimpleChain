@@ -48,16 +48,13 @@ func (c *Connection) Close() {
 }
 
 func (c *Connection) sendMessage(message Message) error {
-	packet := MessagePacket{
-		Message: message,
-	}
 	encoder := chain.NewEncoder(c.Conn)
-	return encoder.Encode(packet)
+	return encoder.Encode(message)
 }
 
-type messageFromConnection struct {
+type Packet struct {
 	connection *Connection
-	packet *MessagePacket
+	message Message
 }
 
 type Node struct {
@@ -72,9 +69,9 @@ type Node struct {
 	InboundConns map[string]*Connection // p2p-listen-endpoint
 	OutboundConns map[string]*Connection // p2p-peer-address
 	NetworkVersion uint16
-	newInConn chan *Connection // trigger when a inbound connection is accepted
-	doneInConn chan *Connection // triger when a inbound connection is disconnected
-	newInPacket chan *messageFromConnection // trigger when received message packet from a inbound connection
+	newConn chan *Connection // trigger when a inbound connection is accepted
+	doneConn chan *Connection // triger when a inbound connection is disconnected
+	newPacket chan *Packet // trigger when received message packet from a inbound connection
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -84,9 +81,9 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		PrivateKeys: make(map[string]crypto.PrivateKey,0),
 		InboundConns:make(map[string]*Connection,0),
 		OutboundConns:make(map[string]*Connection,0),
-		newInConn: make(chan *Connection),
-		doneInConn: make(chan *Connection),
-		newInPacket: make(chan *messageFromConnection),
+		newConn: make(chan *Connection),
+		doneConn: make(chan *Connection),
+		newPacket: make(chan *Packet),
 	}
 }
 
@@ -110,27 +107,27 @@ func (node *Node) ListenFromPeers() error {
 			}
 			ic := NewConnection("")
 			ic.Conn = inboundConn
-			node.newInConn <- ic
+			node.newConn <- ic
 		}
 	}()
 	for {
 		select {
-		case inConn := <-node.newInConn:
-			fmt.Println("accepted new client from address ", inConn.RemoteAddr().String())
-			node.InboundConns[inConn.Conn.RemoteAddr().String()] = inConn
-			go node.handleConnection(inConn)
-		case inPacket := <-node.newInPacket:
-			go node.handleMessage(inPacket.connection, inPacket.packet)
-		case doneInConn := <-node.doneInConn:
-			fmt.Println("disconnected client from address ", doneInConn.RemoteAddr().String())
-			delete(node.InboundConns, doneInConn.RemoteAddr().String())
+		case connection := <-node.newConn:
+			fmt.Println("accepted new client from address ", connection.RemoteAddr().String())
+			node.addConnection(connection)
+			go node.handleConnection(connection)
+		case packet := <-node.newPacket:
+			go node.handleMessage(packet.connection, packet)
+		case doneConnection := <-node.doneConn:
+			fmt.Println("disconnected client from address ", doneConnection.RemoteAddr().String())
+			node.removeConnection(doneConnection)
 		}
 	}
 	return nil
 }
 
-func (node *Node) handleMessage(c *Connection, packet *MessagePacket) {
-	switch msg := packet.Message.(type) {
+func (node *Node) handleMessage(c *Connection, packet *Packet) {
+	switch msg := packet.message.(type) {
 	case HandshakeMessage:
 		c.LastHandshakeReceived = msg
 		node.handleHandshakeMessage(c, msg)
@@ -154,8 +151,7 @@ func (node *Node) Close(c *Connection) {
 }
 
 func (node *Node) ConnectToPeers() {
-	for i := 0; i < len(node.SuppliedPeers); i++ {
-		peerAddr := node.SuppliedPeers[i]
+	for _, peerAddr := range node.SuppliedPeers {
 		c := NewConnection(peerAddr)
 		err := node.Connect(c)
 		if err != nil {
@@ -166,7 +162,7 @@ func (node *Node) ConnectToPeers() {
 
 func (node *Node) Connect(c *Connection) error {
 	if !strings.Contains(c.PeerAddress, ":") {
-		delete(node.OutboundConns, c.PeerAddress)
+		node.removeOutbound(c)
 		return fmt.Errorf("invalid peer address %s", c.PeerAddress)
 	}
 	conn, err := net.Dial(TCP, c.PeerAddress)
@@ -180,31 +176,64 @@ func (node *Node) Connect(c *Connection) error {
 	return nil
 }
 
+func (node *Node) addConnection(c *Connection) {
+	if c.PeerAddress == "" {
+		node.addNewInbound(c)
+	} else {
+		node.addNewOutbound(c)
+	}
+}
+
+func (node *Node) removeConnection(c *Connection) {
+	if c.PeerAddress == "" {
+		node.removeInbound(c)
+	} else {
+		node.removeOutbound(c)
+	}
+}
+
 func (node *Node) addNewOutbound(c *Connection) {
 	node.Lock()
 	defer node.Unlock()
 	node.OutboundConns[c.PeerAddress] = c
 }
 
+func (node *Node) removeOutbound(c *Connection) {
+	node.Lock()
+	defer node.Unlock()
+	delete(node.OutboundConns, c.PeerAddress)
+}
+
+func (node *Node) addNewInbound(c *Connection) {
+	node.Lock()
+	defer node.Unlock()
+	node.InboundConns[c.Conn.RemoteAddr().String()] = c
+}
+
+func (node *Node) removeInbound(c *Connection) {
+	node.Lock()
+	defer node.Unlock()
+	delete(node.InboundConns, c.Conn.RemoteAddr().String())
+}
+
 func (node *Node) handleConnection(c *Connection) {
 	r := bufio.NewReader(c.Conn)
 	for {
-		packet, err := decodeMessageData(r)
+		message, err := decodeMessageData(r)
 		if err != nil {
 			log.Println("Error reading from p2p client:", err)
 			break
 		}
-		msgFromConn := &messageFromConnection{connection: c, packet: packet}
-		node.newInPacket <- msgFromConn
+		packet := &Packet{connection: c, message: message}
+		node.newPacket <- packet
 	}
-	node.doneInConn <- c
+	node.doneConn <- c
 }
 
-func decodeMessageData(r io.Reader) (packet *MessagePacket, err error) {
+func decodeMessageData(r io.Reader) (message Message, err error) {
 	data, err := ioutil.ReadAll(r)
-	packet = &MessagePacket{}
 	decoder := chain.NewDecoder(data)
-	err = decoder.Decode(packet)
+	err = decoder.Decode(&message)
 	return
 }
 

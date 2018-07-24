@@ -8,7 +8,6 @@ import (
 	"errors"
 	"encoding/hex"
 	bytes2 "bytes"
-	"blockchain/network"
 	"blockchain/crypto"
 	"time"
 )
@@ -78,8 +77,6 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 	case *ActionData:
 		println("*ActionData")
 		return e.writeActionData(*cv)
-	case network.MessagePacket:
-		return e.writeMessagePacket(cv)
 	case SHA256Type:
 		return e.writeSHA256(cv)
 	case crypto.PublicKey:
@@ -281,13 +278,6 @@ func (e *Encoder) writeActionData(actionData ActionData) (err error) {
 	}
 
 	return e.writeByteArray(actionData.HexData)
-}
-
-func (e *Encoder) writeMessagePacket(packet network.MessagePacket) (err error) {
-	buf := new(bytes2.Buffer)
-	msgEncoder := NewEncoder(buf)
-	err = msgEncoder.Encode(packet.Message)
-	return
 }
 
 func (e *Encoder) writeSHA256(sha256 SHA256Type) error {
