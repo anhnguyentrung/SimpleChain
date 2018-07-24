@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"log"
 	"io/ioutil"
-	"eos-go"
 )
 
 type Connection struct {
@@ -56,20 +55,9 @@ func (c *Connection) sendMessage(message Message) error {
 	return encoder.Encode(packet)
 }
 
-type MessageHandlers struct {
-	OnHandshake func(c *Connection, message *HandshakeMessage)
-	OnChainSize func(c *Connection, message *ChainSizeMessage)
-	OnGoAway func(c *Connection, message *GoAwayMessage)
-	OnTime func(c *Connection, message *TimeMessage)
-	OnNotice func(c *Connection, message *NoticeMessage)
-	OnRequest func(c *Connection, message *RequestMessage)
-	OnSyncRequest func(c *Connection, message *SyncRequestMessage)
-	OnSignedBlock func(c *Connection, message *chain.SignedBlock)
-	OnPackedTransaction func(c *Connection, message *chain.PackedTransaction)
-}
-
-func (handlers *MessageHandlers) HandleMessage(packet *MessagePacket) {
-
+type messageFromConnection struct {
+	connection *Connection
+	packet *MessagePacket
 }
 
 type Node struct {
@@ -84,7 +72,9 @@ type Node struct {
 	InboundConns map[string]*Connection // p2p-listen-endpoint
 	OutboundConns map[string]*Connection // p2p-peer-address
 	NetworkVersion uint16
-	Handers MessageHandlers
+	newInConn chan *Connection // trigger when a inbound connection is accepted
+	doneInConn chan *Connection // triger when a inbound connection is disconnected
+	newInPacket chan *messageFromConnection // trigger when received message packet from a inbound connection
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -102,25 +92,58 @@ func (node *Node) Start() {
 	go node.ConnectToPeers()
 }
 
+// Receive message
 func (node *Node) ListenFromPeers() error {
 	ln, err := net.Listen("tcp", node.P2PAddress)
 	if err != nil {
 		fmt.Println("start listening: ", err)
 		return err
 	}
-	for {
-		fmt.Println("ok")
-		inboundConn, err := ln.Accept()
-		if err != nil {
-			fmt.Println("accepting connection: ", err)
+	go func() {
+		for {
+			inboundConn, err := ln.Accept()
+			if err != nil {
+				fmt.Println("accepting connection: ", err)
+			}
+			ic := &Connection{}
+			ic.Conn = inboundConn
+			node.newInConn <- ic
 		}
-		start := make(chan bool)
-		ic := &Connection{}
-		ic.Conn = inboundConn
-		node.HandleConnection(ic, start)
-		<- start
+	}()
+	for {
+		select {
+		case inConn := <-node.newInConn:
+			fmt.Println("accepted new client from address ", inConn.RemoteAddr().String())
+			node.InboundConns[inConn.Conn.RemoteAddr().String()] = inConn
+			go node.handleConnection(inConn)
+		case inPacket := <-node.newInPacket:
+			go node.handleMessage(inPacket.connection, inPacket.packet)
+		case doneInConn := <-node.doneInConn:
+			fmt.Println("disconnected client from address ", doneInConn.RemoteAddr().String())
+			delete(node.InboundConns, doneInConn.RemoteAddr().String())
+		}
 	}
 	return nil
+}
+
+func (node *Node) handleMessage(c *Connection, packet *MessagePacket) {
+	switch msg := packet.Message.(type) {
+	case HandshakeMessage:
+		c.LastHandshakeReceived = msg
+		node.handleHandshakeMessage(c, msg)
+	case ChainSizeMessage:
+	case GoAwayMessage:
+	case TimeMessage:
+	case NoticeMessage:
+	case RequestMessage:
+	case SyncRequestMessage:
+	case chain.SignedBlock:
+	case chain.PackedTransaction:
+	}
+}
+
+func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
+	fmt.Println("received handshake message")
 }
 
 func (node *Node) Close(c *Connection) {
@@ -160,18 +183,18 @@ func (node *Node) addNewOutbound(c *Connection) {
 	node.OutboundConns[c.PeerAddress] = c
 }
 
-func (node *Node) HandleConnection(c *Connection, ready chan bool, errChan chan error) {
+func (node *Node) handleConnection(c *Connection) {
 	r := bufio.NewReader(c.Conn)
-	ready <- true
 	for {
 		packet, err := decodeMessageData(r)
 		if err != nil {
 			log.Println("Error reading from p2p client:", err)
-			errChan <- err
-			return
+			break
 		}
-		node.Handers.HandleMessage(packet)
+		msgFromConn := &messageFromConnection{connection: c, packet: packet}
+		node.newInPacket <- msgFromConn
 	}
+	node.doneInConn <- c
 }
 
 func decodeMessageData(r io.Reader) (packet *MessagePacket, err error) {
