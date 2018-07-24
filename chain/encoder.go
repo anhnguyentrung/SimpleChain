@@ -8,6 +8,9 @@ import (
 	"errors"
 	"encoding/hex"
 	bytes2 "bytes"
+	"blockchain/network"
+	"blockchain/crypto"
+	"time"
 )
 
 type Encoder struct {
@@ -75,6 +78,16 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 	case *ActionData:
 		println("*ActionData")
 		return e.writeActionData(*cv)
+	case network.MessagePacket:
+		return e.writeMessagePacket(cv)
+	case SHA256Type:
+		return e.writeSHA256(cv)
+	case crypto.PublicKey:
+		return e.writePublicKey(cv)
+	case crypto.Signature:
+		return e.writeSignature(cv)
+	case time.Time:
+		return e.writeTimestamp(cv)
 	default:
 
 		rv := reflect.Indirect(reflect.ValueOf(v))
@@ -268,6 +281,45 @@ func (e *Encoder) writeActionData(actionData ActionData) (err error) {
 	}
 
 	return e.writeByteArray(actionData.HexData)
+}
+
+func (e *Encoder) writeMessagePacket(packet network.MessagePacket) (err error) {
+	buf := new(bytes2.Buffer)
+	msgEncoder := NewEncoder(buf)
+	err = msgEncoder.Encode(packet.Message)
+	return
+}
+
+func (e *Encoder) writeSHA256(sha256 SHA256Type) error {
+	return e.toWriter(sha256[:])
+}
+
+func (e *Encoder) writePublicKey(publicKey crypto.PublicKey) error {
+	if len(publicKey.Content) != 33 {
+		return fmt.Errorf("public key should be 33 bytes")
+	}
+	if err := e.writeByte(byte(publicKey.Curve)); err != nil {
+		return err
+	}
+
+	return e.toWriter(publicKey.Content)
+}
+
+func (e *Encoder) writeSignature(sig crypto.Signature) error {
+	if len(sig.Content) != 65 {
+		return fmt.Errorf("signature should be 65 bytes")
+	}
+
+	if err := e.writeByte(byte(sig.Curve)); err != nil {
+		return err
+	}
+
+	return e.toWriter(sig.Content) // should write 65 bytes
+}
+
+func (e *Encoder) writeTimestamp(t time.Time) error {
+	n := uint64(t.UnixNano())
+	return e.writeUint64(n)
 }
 
 func MarshalBinary(v interface{}) ([]byte, error) {

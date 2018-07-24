@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"io"
 	"io/ioutil"
+	"blockchain/crypto"
+	"time"
 )
 
 var TypeSize = struct {
@@ -17,11 +19,10 @@ var TypeSize = struct {
 	Int16          int
 	UInt32         int
 	UInt64         int
-	SHA256Bytes    int
+	SHA256Type     int
 	PublicKey      int
 	Signature      int
 	Timestamp      int
-	BlockTimestamp int
 	CurrencyName   int
 	Bool           int
 }{
@@ -31,11 +32,10 @@ var TypeSize = struct {
 	Int16:          2,
 	UInt32:         4,
 	UInt64:         8,
-	SHA256Bytes:    32,
+	SHA256Type:     32,
 	PublicKey:      34,
 	Signature:      66,
 	Timestamp:      8,
-	BlockTimestamp: 4,
 	CurrencyName:   7,
 	Bool:           1,
 }
@@ -177,6 +177,26 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		}
 
 		rv.Set(reflect.ValueOf(action))
+		return
+	case *SHA256Type:
+		var s SHA256Type
+		s, err = d.readSHA256()
+		rv.SetBytes(s[:])
+		return
+	case *crypto.PublicKey:
+		var p crypto.PublicKey
+		p, err = d.readPublicKey()
+		rv.Set(reflect.ValueOf(p))
+		return
+	case *crypto.Signature:
+		var s crypto.Signature
+		s, err = d.readSignature()
+		rv.Set(reflect.ValueOf(s))
+		return
+	case *time.Time:
+		var ts time.Time
+		ts, err = d.readTimestamp()
+		rv.Set(reflect.ValueOf(ts))
 		return
 	}
 
@@ -406,6 +426,55 @@ func (d *Decoder) readActionData(action *Action) (err error) {
 	println("Object type :", obj.Interface())
 	action.Data.Data = obj.Interface()
 
+	return
+}
+
+func (d *Decoder) readSHA256() (out SHA256Type, err error) {
+
+	if d.remaining() < TypeSize.SHA256Type {
+		err = fmt.Errorf("sha256 required [%d] bytes, remaining [%d]", TypeSize.SHA256Type, d.remaining())
+		return
+	}
+	out = SHA256Type{}
+	copy(out[:], d.data[d.pos : d.pos+TypeSize.SHA256Type])
+	d.pos += TypeSize.SHA256Type
+	return
+}
+
+func (d *Decoder) readPublicKey() (out crypto.PublicKey, err error) {
+
+	if d.remaining() < TypeSize.PublicKey {
+		err = fmt.Errorf("publicKey required [%d] bytes, remaining [%d]", TypeSize.PublicKey, d.remaining())
+		return
+	}
+	out = crypto.PublicKey{
+		Curve:   crypto.CurveID(d.data[d.pos]),              // 1 byte
+		Content: d.data[d.pos+1 : d.pos+TypeSize.PublicKey], // 33 bytes
+	}
+	return
+}
+
+func (d *Decoder) readSignature() (out crypto.Signature, err error) {
+	if d.remaining() < TypeSize.Signature {
+		err = fmt.Errorf("signature required [%d] bytes, remaining [%d]", TypeSize.Signature, d.remaining())
+		return
+	}
+	out = crypto.Signature{
+		Curve:   crypto.CurveID(d.data[d.pos]),                 // 1 byte
+		Content: d.data[d.pos+1 : d.pos+TypeSize.Signature], 	// 65 bytes
+	}
+	return
+}
+
+func (d *Decoder) readTimestamp() (out time.Time, err error) {
+
+	if d.remaining() < TypeSize.Timestamp {
+		err = fmt.Errorf("tstamp required [%d] bytes, remaining [%d]", TypeSize.Timestamp, d.remaining())
+		return
+	}
+
+	unixNano, err := d.readUint64()
+	out = time.Unix(0, int64(unixNano))
 	return
 }
 

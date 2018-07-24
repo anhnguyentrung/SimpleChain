@@ -84,12 +84,15 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		PrivateKeys: make(map[string]crypto.PrivateKey,0),
 		InboundConns:make(map[string]*Connection,0),
 		OutboundConns:make(map[string]*Connection,0),
+		newInConn: make(chan *Connection),
+		doneInConn: make(chan *Connection),
+		newInPacket: make(chan *messageFromConnection),
 	}
 }
 
 func (node *Node) Start() {
-	go node.ListenFromPeers()
-	go node.ConnectToPeers()
+	node.ListenFromPeers()
+	//go node.ConnectToPeers()
 }
 
 // Receive message
@@ -105,7 +108,7 @@ func (node *Node) ListenFromPeers() error {
 			if err != nil {
 				fmt.Println("accepting connection: ", err)
 			}
-			ic := &Connection{}
+			ic := NewConnection("")
 			ic.Conn = inboundConn
 			node.newInConn <- ic
 		}
