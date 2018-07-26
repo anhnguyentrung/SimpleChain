@@ -27,6 +27,8 @@ type Connection struct {
 	LastHandshakeReceived HandshakeMessage
 	LastHandshakeSent HandshakeMessage
 	SendHandshakeCount int16
+	ForkHead chain.SHA256Type
+	ForkHeadNum uint32
 }
 
 func NewConnection(peerAddr string) *Connection {
@@ -154,6 +156,10 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 
 func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
 	fmt.Println("received handshake message", message.ChainId)
+}
+
+func (node *Node) handlePackedTransaction(c *Connection, packedTransaction chain.PackedTransaction) {
+	fmt.Println("received packed transaction")
 }
 
 func (node *Node) Close(c *Connection) {

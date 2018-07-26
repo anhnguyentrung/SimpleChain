@@ -7,9 +7,15 @@
   packages = ["ripemd160"]
   revision = "a2144134853fc9a27a7b1e3eb4f19f1a76df13c9"
 
+[[projects]]
+  branch = "v1"
+  name = "gopkg.in/karalabe/cookiejar.v1"
+  packages = ["collections/deque"]
+  revision = "e1490cae028c5c8f19efeea5b11f5c4e3275ce05"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4c6d76b7aefe04328fe3330e451b9facb47a482df2655eb2a94c15899a76df0b"
+  inputs-digest = "e61e1c083363b68e0549ec08646d0e753b5bb9dd7fa74af91e97305d39116280"
   solver-name = "gps-cdcl"
   solver-version = 1

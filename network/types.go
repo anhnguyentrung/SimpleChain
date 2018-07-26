@@ -26,7 +26,7 @@ const (
 
 type MessageTypes byte
 const (
-	Handshake = iota
+	Handshake MessageTypes = iota
 	ChainSize
 	GoAway
 	Time
