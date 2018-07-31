@@ -243,7 +243,7 @@ func (node *Node) handleConnection(c *Connection) {
 			fmt.Println("Type ", err)
 			break
 		}
-		msgType := typeBuf[0]
+		msgType := MessageTypes(typeBuf[0])
 		lenBuf := make([]byte, 4, 4)
 		_, err = io.ReadFull(r, lenBuf)
 		if err != nil {

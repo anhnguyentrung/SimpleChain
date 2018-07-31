@@ -13,6 +13,12 @@ type SHA256Type [32]byte
 const NEW_ACCOUNT  = "newaccount"
 const OWNER = "owner"
 const ACTIVE = "active"
+const DEFAULT_MAX_TRX_LIFETIME = 60*60 // 60 minutes
+const DEFAULT_DEFERRED_TRX_EXPIRATION_WINDOW = 10*60 // 10 minutes
+const DEFAULT_MAX_TRX_DELAY = 45*24*3600 // 45 days
+const DEFAULT_MAX_INLINE_ACTION_SIZE = 4*1024 // 4KB
+const DEFAULT_MAX_INLINE_ACTION_DEPTH = 4
+const DEFAULT_MAX_AUTH_DEPTH  = 6
 
 type Extension struct {
 	Type uint16
@@ -32,4 +38,12 @@ const(
 	Hard_Fail 							// objectively failed and error handler objectively failed thus no state change
 	Delayed 							// transaction delayed/deferred/scheduled for future execution
 	Expired  							// transaction expired and storage space refuned to user
+)
+
+type BlockStatus uint8
+const(
+	Irreversible BlockStatus = iota
+	Validated   = 1
+	complete   = 2
+	incomplete  = 3
 )

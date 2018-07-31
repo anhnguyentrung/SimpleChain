@@ -42,7 +42,7 @@ const MessageHeaderSize = 4
 
 type MessageType interface {}
 type MessageHeader struct {
-	Type 	byte // 1 byte
+	Type 	MessageTypes // 1 byte
 	Length  uint32  	// 4 bytes
 }
 type Message struct {

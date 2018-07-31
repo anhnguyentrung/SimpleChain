@@ -53,6 +53,6 @@ func (sm *SyncManager) setState(newState states) {
 
 func (sm *SyncManager) isActive(c *Connection) {
 	if sm.state == Head_Catchup && c != nil {
-		
+
 	}
 }
