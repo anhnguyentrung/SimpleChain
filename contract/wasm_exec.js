@@ -371,7 +371,7 @@
 				mem.setUint32(offset + 4, 0, true);
 				offset += 8;
 			});
-			
+
 			while (true) {
 				const callbackPromise = new Promise((resolve) => {
 					this._resolveCallbackPromise = resolve;
