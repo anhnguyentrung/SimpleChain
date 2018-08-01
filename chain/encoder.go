@@ -288,20 +288,12 @@ func (e *Encoder) writePublicKey(publicKey crypto.PublicKey) error {
 	if len(publicKey.Content) != 33 {
 		return fmt.Errorf("public key should be 33 bytes")
 	}
-	if err := e.writeByte(byte(publicKey.Curve)); err != nil {
-		return err
-	}
-
 	return e.toWriter(publicKey.Content)
 }
 
 func (e *Encoder) writeSignature(sig crypto.Signature) error {
 	if len(sig.Content) != 65 {
 		return fmt.Errorf("signature should be 65 bytes")
-	}
-
-	if err := e.writeByte(byte(sig.Curve)); err != nil {
-		return err
 	}
 
 	return e.toWriter(sig.Content) // should write 65 bytes

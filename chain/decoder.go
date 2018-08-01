@@ -33,8 +33,8 @@ var TypeSize = struct {
 	UInt32:         4,
 	UInt64:         8,
 	SHA256Type:     32,
-	PublicKey:      34,
-	Signature:      66,
+	PublicKey:      33,
+	Signature:      65,
 	Timestamp:      8,
 	CurrencyName:   7,
 	Bool:           1,
@@ -452,8 +452,7 @@ func (d *Decoder) readPublicKey() (out crypto.PublicKey, err error) {
 		return
 	}
 	out = crypto.PublicKey{
-		Curve:   crypto.CurveID(d.data[d.pos]),              // 1 byte
-		Content: d.data[d.pos+1 : d.pos+TypeSize.PublicKey], // 33 bytes
+		Content: d.data[d.pos : d.pos+TypeSize.PublicKey], // 33 bytes
 	}
 	return
 }
@@ -464,8 +463,7 @@ func (d *Decoder) readSignature() (out crypto.Signature, err error) {
 		return
 	}
 	out = crypto.Signature{
-		Curve:   crypto.CurveID(d.data[d.pos]),                 // 1 byte
-		Content: d.data[d.pos+1 : d.pos+TypeSize.Signature], 	// 65 bytes
+		Content: d.data[d.pos : d.pos+TypeSize.Signature], 	// 65 bytes
 	}
 	return
 }

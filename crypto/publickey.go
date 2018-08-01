@@ -14,7 +14,6 @@ const PublicKeyPrefix = "PUB_"
 const PublicKeyPrefixCompat = "EOS"
 
 type PublicKey struct {
-	Curve   CurveID
 	Content []byte
 }
 
@@ -24,47 +23,27 @@ func NewPublicKey(pubKey string) (out PublicKey, err error) {
 	}
 
 	var pubKeyMaterial string
-	var curveID CurveID
 	if strings.HasPrefix(pubKey, PublicKeyPrefix) {
 		pubKeyMaterial = pubKey[len(PublicKeyPrefix):] // strip "PUB_"
-
-		curvePrefix := pubKeyMaterial[:3]
-		switch curvePrefix {
-		case "K1_":
-			curveID = CurveK1
-		case "R1_":
-			curveID = CurveR1
-		default:
-			return out, fmt.Errorf("unsupported curve prefix %q", curvePrefix)
-		}
 		pubKeyMaterial = pubKeyMaterial[3:] // strip "K1_"
 
 	} else if strings.HasPrefix(pubKey, PublicKeyPrefixCompat) { // "EOS"
 		pubKeyMaterial = pubKey[len(PublicKeyPrefixCompat):] // strip "EOS"
-		curveID = CurveK1
 
 	} else {
 		return out, fmt.Errorf("public key should start with %q (or the old %q)", PublicKeyPrefix, PublicKeyPrefixCompat)
 	}
 
-	pubDecoded, err := checkDecode(pubKeyMaterial, curveID)
+	pubDecoded, err := checkDecode(pubKeyMaterial)
 	if err != nil {
 		return out, fmt.Errorf("checkDecode: %s", err)
 	}
 
-	return PublicKey{Curve: curveID, Content: pubDecoded}, nil
-}
-
-func MustNewPublicKey(pubKey string) PublicKey {
-	key, err := NewPublicKey(pubKey)
-	if err != nil {
-		panic(err.Error())
-	}
-	return key
+	return PublicKey{Content: pubDecoded}, nil
 }
 
 // CheckDecode decodes a string that was encoded with CheckEncode and verifies the checksum.
-func checkDecode(input string, curve CurveID) (result []byte, err error) {
+func checkDecode(input string) (result []byte, err error) {
 	decoded := base58.Decode(input)
 	if len(decoded) < 5 {
 		return nil, fmt.Errorf("invalid format")
@@ -74,7 +53,7 @@ func checkDecode(input string, curve CurveID) (result []byte, err error) {
 	///// WARN: ok the ripemd160checksum should include the prefix in CERTAIN situations,
 	// like when we imported the PubKey without a prefix ?! tied to the string representation
 	// or something ? weird.. checksum shouldn't change based on the string reprsentation.
-	if bytes.Compare(ripemd160checksum(decoded[:len(decoded)-4], curve), cksum[:]) != 0 {
+	if bytes.Compare(ripemd160checksum(decoded[:len(decoded)-4]), cksum[:]) != 0 {
 		return nil, fmt.Errorf("invalid checksum")
 	}
 	// perhaps bitcoin has a leading net ID / version, but EOS doesn't
@@ -83,30 +62,14 @@ func checkDecode(input string, curve CurveID) (result []byte, err error) {
 	return
 }
 
-func ripemd160checksum(in []byte, curve CurveID) []byte {
+func ripemd160checksum(in []byte) []byte {
 	h := ripemd160.New()
 	_, _ = h.Write(in) // this implementation has no error path
-
-	// if curve != CurveK1 {
-	// 	_, _ = h.Write([]byte(curve.String())) // conditionally ?
-	// }
-	sum := h.Sum(nil)
-	return sum[:4]
-}
-
-func Ripemd160checksumHashCurve(in []byte, curve CurveID) []byte {
-	h := ripemd160.New()
-	_, _ = h.Write(in) // this implementation has no error path
-
-	// FIXME: this seems to be only rolled out to the `SIG_` things..
-	// proper support for importing `EOS` keys isn't rolled out into `dawn4`.
-	_, _ = h.Write([]byte(curve.String())) // conditionally ?
 	sum := h.Sum(nil)
 	return sum[:4]
 }
 
 func (p PublicKey) Key() (*btcec.PublicKey, error) {
-	// TODO: implement the curve switch according to `p.Curve`
 	key, err := btcec.ParsePubKey(p.Content, btcec.S256())
 	if err != nil {
 		return nil, fmt.Errorf("parsePubKey: %s", err)
@@ -116,12 +79,9 @@ func (p PublicKey) Key() (*btcec.PublicKey, error) {
 }
 
 func (p PublicKey) String() string {
-	//hash := ripemd160checksum(append([]byte{byte(p.Curve)}, p.Content...))  does the checksum include the curve ID?!
-	hash := ripemd160checksum(p.Content, p.Curve)
+	hash := ripemd160checksum(p.Content)
 	rawkey := append(p.Content, hash[:4]...)
 	return PublicKeyPrefixCompat + base58.Encode(rawkey)
-	// FIXME: when we decide to go ahead with the new representation.
-	//return PublicKeyPrefix + p.Curve.StringPrefix() + base58.Encode(rawkey)
 }
 
 func (p PublicKey) MarshalJSON() ([]byte, error) {

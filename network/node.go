@@ -330,7 +330,6 @@ func (node *Node) SignCompact(signer crypto.PublicKey, digest chain.SHA256Type) 
 		return sig
 	}
 	return crypto.Signature{
-		Curve: crypto.CurveK1,
 		Content: make([]byte, 65, 65),
 	}
 }

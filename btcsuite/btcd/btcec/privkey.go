@@ -9,7 +9,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"math/big"
-	"errors"
 )
 
 // PrivateKey wraps an ecdsa.PrivateKey as a convenience mainly for signing
@@ -60,28 +59,7 @@ func (p *PrivateKey) ToECDSA() *ecdsa.PrivateKey {
 // is deterministic (same message and same key yield the same signature) and canonical
 // in accordance with RFC6979 and BIP0062.
 func (p *PrivateKey) Sign(hash []byte) (*Signature, error) {
-	return signRFC6979(p, hash, 0)
-}
-
-// SignCanonical goes through signatures and returns only a canonical
-// representations.  This matches the EOS blockchain expectations.
-func (p *PrivateKey) SignCanonical(curve *KoblitzCurve, hash []byte) ([]byte, error) {
-	for i := 0; i < 25; i++ {
-		sig, err := signRFC6979(p, hash, i)
-		if err != nil {
-			return nil, err
-		}
-
-		compactSig, err := makeCompact(curve, sig, p, hash, true)
-		if err != nil {
-			continue
-		}
-
-		if isCanonical(compactSig) {
-			return compactSig, nil
-		}
-	}
-	return nil, errors.New("couldn't find a canonical signature")
+	return signRFC6979(p, hash)
 }
 
 // PrivKeyBytesLen defines the length in bytes of a serialized private key.
@@ -93,21 +71,3 @@ func (p *PrivateKey) Serialize() []byte {
 	b := make([]byte, 0, PrivKeyBytesLen)
 	return paddedAppend(PrivKeyBytesLen, b, p.ToECDSA().D.Bytes())
 }
-
-func isCanonical(compactSig []byte) bool {
-	// From EOS's codebase, our way of doing Canonical sigs.
-	// https://steemit.com/steem/@dantheman/steem-and-bitshares-cryptographic-security-update
-	//
-	// !(c.data[1] & 0x80)
-	// && !(c.data[1] == 0 && !(c.data[2] & 0x80))
-	// && !(c.data[33] & 0x80)
-	// && !(c.data[33] == 0 && !(c.data[34] & 0x80));
-
-	d := compactSig
-	t1 := (d[1] & 0x80) == 0
-	t2 := !(d[1] == 0 && ((d[2] & 0x80) == 0))
-	t3 := (d[33] & 0x80) == 0
-	t4 := !(d[33] == 0 && ((d[34] & 0x80) == 0))
-	return t1 && t2 && t3 && t4
-}
-

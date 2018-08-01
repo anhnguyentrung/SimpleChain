@@ -36,7 +36,7 @@ func newRandomPrivateKey(randSource io.Reader) (*PrivateKey, error) {
 	h.Write(rawPrivKey)
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), h.Sum(nil))
 
-	return &PrivateKey{Curve: CurveK1, privKey: privKey}, nil
+	return &PrivateKey{privKey: privKey}, nil
 }
 
 func NewPrivateKeyForAccount(accountName string, role string) (*PrivateKey, error) {
@@ -45,32 +45,17 @@ func NewPrivateKeyForAccount(accountName string, role string) (*PrivateKey, erro
 	h.Write(rawPrivKey[:])
 	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), h.Sum(nil))
 
-	return &PrivateKey{Curve: CurveK1, privKey: privKey}, nil
+	return &PrivateKey{privKey: privKey}, nil
 }
 
 func NewPrivateKey(wif string) (*PrivateKey, error) {
 	// Strip potential prefix, and set curve
 	var privKeyMaterial string
-	var curveID CurveID
 	if strings.HasPrefix(wif, PrivateKeyPrefix) { // "PVT_"
 		privKeyMaterial = wif[len(PrivateKeyPrefix):]
 
-		// check the subcurve
-		curvePrefix := privKeyMaterial[:3]
-		switch curvePrefix {
-		case "K1_":
-			curveID = CurveK1
-		case "R1_":
-			curveID = CurveR1
-		default:
-			return nil, fmt.Errorf("unsupported curve prefix %q", curvePrefix)
-		}
-
-		privKeyMaterial = privKeyMaterial[3:] // remove "K1_"...
-
 	} else { // no-prefix, like before
 		privKeyMaterial = wif
-		curveID = CurveK1
 	}
 
 	wifObj, err := btcutil.DecodeWIF(privKeyMaterial)
@@ -78,16 +63,15 @@ func NewPrivateKey(wif string) (*PrivateKey, error) {
 		return nil, err
 	}
 
-	return &PrivateKey{Curve: curveID, privKey: wifObj.PrivKey}, nil
+	return &PrivateKey{privKey: wifObj.PrivKey}, nil
 }
 
 type PrivateKey struct {
-	Curve   CurveID
 	privKey *btcec.PrivateKey
 }
 
 func (p *PrivateKey) PublicKey() PublicKey {
-	return PublicKey{Curve: p.Curve, Content: p.privKey.PubKey().SerializeCompressed()}
+	return PublicKey{Content: p.privKey.PubKey().SerializeCompressed()}
 }
 
 // Sign signs a 32 bytes SHA256 hash..
@@ -96,24 +80,17 @@ func (p *PrivateKey) Sign(hash []byte) (out Signature, err error) {
 		return out, fmt.Errorf("hash should be 32 bytes")
 	}
 
-	if p.Curve != CurveK1 {
-		return out, fmt.Errorf("curve R1 not supported for signature")
-	}
-
-	// TODO: implement the R1 curve..
-	compactSig, err := p.privKey.SignCanonical(btcec.S256(), hash)
+	compactSig, err :=  btcec.SignCompact(btcec.S256(), p.privKey, hash, true)
 	if err != nil {
 		return out, fmt.Errorf("canonical, %s", err)
 	}
 
-	return Signature{Curve: p.Curve, Content: compactSig}, nil
+	return Signature{Content: compactSig}, nil
 }
 
 func (p *PrivateKey) String() string {
 	wif, _ := btcutil.NewWIF(p.privKey, &chaincfg.Params{PrivateKeyID:'\x80'}, false) // no error possible
 	return wif.String()
-	// FIXME: when we decide to go ahead with the new representation.
-	//return PrivateKeyPrefix + p.Curve.StringPrefix() + wif.String()
 }
 
 func (p *PrivateKey) MarshalJSON() ([]byte, error) {
