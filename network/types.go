@@ -39,6 +39,8 @@ const (
 
 const TCP  = "tcp"
 const MessageHeaderSize = 4
+const PeerAuthenticationInterval = 1 //second
+const SyncReqSpan = 100 //second
 
 type MessageType interface {}
 type MessageHeader struct {

@@ -2,6 +2,9 @@ package network
 
 import (
 	"gopkg.in/karalabe/cookiejar.v1/collections/deque"
+	"fmt"
+	"bytes"
+	"blockchain/chain"
 )
 
 type states uint8
@@ -51,8 +54,160 @@ func (sm *SyncManager) setState(newState states) {
 	sm.state = newState
 }
 
-func (sm *SyncManager) isActive(c *Connection) {
-	if sm.state == Head_Catchup && c != nil {
+func (sm *SyncManager) requestNextChunk(c *Connection, node *Node) {
+	headBlock := node.BlockChain.ForkDatabase.Head.BlockNum
+	if headBlock < sm.syncLastRequestedNum && (sm.source != nil) && sm.source.Current() {
+		return
+	}
+	if c.Current() {
+		sm.source = c
+	} else {
+		if len(node.Conns) == 1 {
+			if sm.source == nil {
+				for k := range node.Conns {
+					sm.source = node.Conns[k]
+					break
+				}
+			}
+		} else {
+			if sm.source != nil {
+				foundSource := false
+				for _, conn := range node.Conns {
+					if conn == sm.source {
+						foundSource = true
+						break
+					}
+				}
+				if !foundSource {
+					for _, conn := range node.Conns {
+						if conn.Current() {
+							sm.source = conn
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if sm.source == nil || !sm.source.Current() {
+		fmt.Println("Unable to continue syncing at this time")
+		sm.syncKnownLibNum = node.BlockChain.LastIrreversibleBlockNum()
+		sm.syncLastRequestedNum = 0
+		sm.setState(In_Sync)
+		return
+	}
+	if sm.syncLastRequestedNum != sm.syncKnownLibNum {
+		var start uint32 = sm.syncNextExpectedNum
+		var end uint32 = start + SyncReqSpan - 1
+		if end > sm.syncKnownLibNum {
+			end = sm.syncKnownLibNum
+		}
+		if end > 0 && end >= start {
+			sm.requestSyncBlocks(c, start, end)
+			sm.syncLastRequestedNum = end
+		}
+	}
+}
+
+func (sm *SyncManager) requestSyncBlocks(c *Connection, start, end uint32) {
+	syncMessage := SyncRequestMessage{
+		StartBlock: start,
+		EndBlock: end,
+	}
+	msg := Message{
+		Header: MessageHeader{
+			Type:SyncRequest,
+			Length:0,
+		},
+		Content:syncMessage,
+	}
+	c.sendMessage(msg)
+}
+
+func (sm *SyncManager) resetLibNum(c *Connection, node *Node) {
+	if sm.state == In_Sync {
+		sm.source = nil
+	}
+	if c.Current() {
+		if c.LastHandshakeReceived.LastIrreversibleBlockNum > sm.syncKnownLibNum {
+			sm.syncKnownLibNum = c.LastHandshakeReceived.LastIrreversibleBlockNum
+		}
+	} else if c == sm.source {
+		sm.syncLastRequestedNum = 0
+		sm.requestNextChunk(c, node)
+	}
+}
+
+func (sm *SyncManager) syncRequired(node *Node) bool {
+	return sm.syncLastRequestedNum < sm.syncKnownLibNum || node.BlockChain.ForkDatabase.Head.BlockNum < sm.syncLastRequestedNum
+}
+
+func (sm *SyncManager) startSync(c *Connection, node *Node, target uint32) {
+	if target > sm.syncKnownLibNum {
+		sm.syncKnownLibNum = target
+	}
+	if !sm.syncRequired(node) {
+		return
+	}
+	if sm.state == In_Sync {
+		sm.setState(Lib_Catchup)
+		sm.syncNextExpectedNum = node.BlockChain.LastIrreversibleBlockNum() + 1
+	}
+	sm.requestNextChunk(c, node)
+}
+
+func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id chain.SHA256Type) {
+	req := RequestMessage{}
+	req.ReqBlocks.Mode = Catch_Up
+	
+}
+
+func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, node *Node) {
+	libNum := node.BlockChain.LastIrreversibleBlockNum()
+	peerLib := message.LastIrreversibleBlockNum
+	sm.resetLibNum(c, node)
+	c.Syncing = false
+	head := node.BlockChain.ForkDatabase.Head.BlockNum
+	headId := node.BlockChain.ForkDatabase.Head.Id
+	if bytes.Equal(headId[:], message.HeadId[:]) {
+		noticeMsg := NoticeMessage{}
+		noticeMsg.KnownBlocks.Mode = None
+		noticeMsg.KnownTrx.Mode = Catch_Up
+		noticeMsg.KnownTrx.Pending = uint32(len(node.LocalTrxs))
+		msg := Message{
+			Header: MessageHeader{
+				Type:Notice,
+				Length:0,
+			},
+			Content:noticeMsg,
+		}
+		c.sendMessage(msg)
+		return
+	}
+	if head < peerLib {
+		sm.startSync(c, node, peerLib)
+		return
+	}
+	if libNum > message.HeadNum {
+		if message.Generation > 1 {
+			noticeMsg := NoticeMessage{}
+			noticeMsg.KnownBlocks.Mode = Last_Irr_Catch_Up
+			noticeMsg.KnownTrx.Mode = Last_Irr_Catch_Up
+			noticeMsg.KnownTrx.Pending = libNum
+			noticeMsg.KnownBlocks.Pending = head
+			msg := Message{
+				Header: MessageHeader{
+					Type:Notice,
+					Length:0,
+				},
+				Content:noticeMsg,
+			}
+			c.sendMessage(msg)
+			return
+		}
+	}
+	if head <= message.HeadNum {
 
 	}
 }

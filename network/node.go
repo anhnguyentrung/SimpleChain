@@ -16,12 +16,14 @@ import (
 	"os"
 	"encoding/binary"
 	"log"
+	"bytes"
+	"blockchain/btcsuite/btcd/btcec"
 )
 
 type Connection struct {
 	net.Conn
 	PeerAddress string
-	Connecting bool
+	Connected bool
 	Syncing bool
 	NodeId chain.SHA256Type
 	LastHandshakeReceived HandshakeMessage
@@ -29,12 +31,13 @@ type Connection struct {
 	SendHandshakeCount int16
 	ForkHead chain.SHA256Type
 	ForkHeadNum uint32
+	NetworkVersion uint16
 }
 
 func NewConnection(peerAddr string) *Connection {
 	return &Connection{
 		PeerAddress:peerAddr,
-		Connecting:false,
+		Connected:false,
 		Syncing:false,
 		LastHandshakeReceived:HandshakeMessage{},
 		LastHandshakeSent:HandshakeMessage{},
@@ -43,12 +46,26 @@ func NewConnection(peerAddr string) *Connection {
 }
 
 func (c *Connection) Close() {
-	c.Connecting = false
+	c.Connected = false
 	c.Syncing = false
 	c.SendHandshakeCount = 0
 	c.LastHandshakeReceived = HandshakeMessage{}
 	c.LastHandshakeSent = HandshakeMessage{}
 	c.Conn.Close()
+}
+
+func (c *Connection) PeerName() string {
+	if c.LastHandshakeReceived.P2PAddress != "" {
+		return c.LastHandshakeReceived.P2PAddress
+	}
+	if c.PeerAddress != "" {
+		return c.PeerAddress
+	}
+	return "connecting client"
+}
+
+func (c *Connection) Current() bool {
+	return c.Connected && !c.Syncing
 }
 
 func (c *Connection) sendMessage(message Message) error {
@@ -63,9 +80,31 @@ func (c *Connection) sendMessage(message Message) error {
 	return err
 }
 
+func (c *Connection) sendGoAwayMessage(reason GoAwayReason) error {
+	goAwayMsg := NewGoAwayMessage(reason)
+	msg := Message{
+		Header: MessageHeader{
+			Type:Handshake,
+			Length:0,
+		},
+		Content:goAwayMsg,
+	}
+	return c.sendMessage(msg)
+}
+
 type Packet struct {
 	connection *Connection
 	message Message
+}
+
+type NodeTransactionState struct{
+	Id chain.SHA256Type
+	Expires time.Time
+	PackedTrx chain.PackedTransaction
+	serializedTrx []byte
+	BlockNum uint32
+	TrueBlock uint32
+	Requests uint32
 }
 
 type Node struct {
@@ -73,28 +112,32 @@ type Node struct {
 	P2PAddress string
 	SuppliedPeers []string
 	AllowPeers []crypto.PublicKey
-	PrivateKeys map[string]crypto.PrivateKey
+	PrivateKeys map[string]*crypto.PrivateKey
 	ChainId chain.SHA256Type
 	NodeId chain.SHA256Type
 	UserAgentName string
-	InboundConns map[string]*Connection // p2p-listen-endpoint
-	OutboundConns map[string]*Connection // p2p-peer-address
+	Conns map[string]*Connection
 	NetworkVersion uint16
+	NetworkVersionMatch bool
 	newConn chan *Connection // trigger when a inbound connection is accepted
 	doneConn chan *Connection // triger when a inbound connection is disconnected
 	newPacket chan *Packet // trigger when received message packet from a inbound connection
+	SyncManager *SyncManager
+	BlockChain chain.BlockChain
+	LocalTrxs []NodeTransactionState
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 	return &Node {
 		P2PAddress:p2pAddress,
 		SuppliedPeers:suppliedPeers,
-		PrivateKeys: make(map[string]crypto.PrivateKey,0),
-		InboundConns:make(map[string]*Connection,0),
-		OutboundConns:make(map[string]*Connection,0),
+		PrivateKeys: make(map[string]*crypto.PrivateKey,0),
+		Conns:make(map[string]*Connection,0),
 		newConn: make(chan *Connection),
 		doneConn: make(chan *Connection),
 		newPacket: make(chan *Packet),
+		NetworkVersionMatch: false,
+		BlockChain: chain.NewBlockChain(),
 	}
 }
 
@@ -154,8 +197,145 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	}
 }
 
+func isValidHandshakeMessage(message HandshakeMessage) bool {
+	valid := true
+	if message.LastIrreversibleBlockNum > message.HeadNum {
+		valid = false
+	}
+	if message.P2PAddress == "" {
+		valid = false
+	}
+	if message.OS == "" {
+		valid = false
+	}
+	emptySig := make([]byte, 65, 65)
+	emptyHash := sha256.Sum256([]byte(""))
+	isEmptySig := bytes.Equal(message.Sig.Content, emptySig)
+	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
+	bytesOfTimestamp, _ := chain.MarshalBinary(message.Time)
+	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], sha256.Sum256(bytesOfTimestamp)[:])))    {
+		valid = false
+	}
+	return valid
+}
+
 func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
 	fmt.Println("received handshake message", message.ChainId)
+	if !isValidHandshakeMessage(message) {
+		fmt.Println("bad handshake message")
+		c.sendGoAwayMessage(Fatal_Other)
+		return
+	}
+	libNum := node.BlockChain.LastIrreversibleBlockNum()
+	peerLib := message.LastIrreversibleBlockNum
+	if c.Connecting {
+		c.Connecting = false
+	}
+	if message.Generation == 1 {
+		if message.NodeId == node.NodeId {
+			c.sendGoAwayMessage(Self)
+			return
+		}
+		if c.PeerAddress == "" || c.LastHandshakeReceived.NodeId == sha256.Sum256([]byte("")) {
+			fmt.Println("checking for duplicate")
+			for _, check := range node.Conns {
+				if check == c {
+					continue
+				}
+				if check.Connected && check.PeerAddress == message.P2PAddress {
+					if message.Time.UnixNano() + c.LastHandshakeSent.Time.UnixNano()  <= check.LastHandshakeSent.Time.UnixNano() + check.LastHandshakeReceived.Time.UnixNano() {
+						continue
+					}
+					c.sendGoAwayMessage(Duplicate)
+					return
+				}
+			}
+		} else {
+			fmt.Println("skipping duplicate check")
+		}
+		if message.ChainId != node.ChainId {
+			fmt.Println("Peer on a different chain. Closing connection")
+			c.sendGoAwayMessage(Wrong_Chain)
+			return
+		}
+		c.NetworkVersion = message.NetworkVersion
+		if c.NetworkVersion != node.NetworkVersion {
+			if node.NetworkVersionMatch {
+				fmt.Println("Peer network version does not match")
+				c.sendGoAwayMessage(Wrong_Version)
+				return
+			} else {
+				fmt.Printf("Local network version %d, remote network version %d\n", node.NetworkVersion, c.NetworkVersion)
+
+			}
+		}
+		if c.NodeId !=  message.NodeId {
+			c.NodeId = message.NodeId
+		}
+		if !node.authenticatePeer(message) {
+			fmt.Println("Peer not authenticated")
+			c.sendGoAwayMessage(Authentication)
+			return
+		}
+		onFork := false
+		if peerLib <= libNum && peerLib > 0 {
+			peerLibId := node.BlockChain.GetBlockIdForNum(peerLib)
+			onFork = (message.LastIrreversibleBlockId != peerLibId)
+			if onFork {
+				c.sendGoAwayMessage(Forked)
+				return
+			}
+		}
+		if c.SendHandshakeCount == 0 {
+			node.sendHandshake(c)
+		}
+	}
+	c.LastHandshakeReceived = message
+	node.SyncManager.
+
+}
+
+func (node *Node) authenticatePeer(message HandshakeMessage) bool {
+	var pub *crypto.PublicKey = nil
+	for _, peer := range node.AllowPeers {
+		if bytes.Equal(peer.Content, message.Key.Content) {
+			pub = &peer
+			break
+		}
+	}
+	priv := node.PrivateKeys[message.Key.String()]
+	producer := NewProducerManager()
+	foundProducerKey := producer.isProducerKey(message.Key)
+	if pub == nil && priv == nil && !foundProducerKey {
+		return false
+	}
+	now := time.Now().Unix()
+	if now - message.Time.Unix() > PeerAuthenticationInterval {
+		return false
+	}
+	emptySig := make([]byte, 65, 65)
+	emptyHash := sha256.Sum256([]byte(""))
+	isEmptySig := bytes.Equal(message.Sig.Content, emptySig)
+	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
+	if !isEmptySig && !isEmptyHash {
+		bytesOfTimestamp, _ := chain.MarshalBinary(message.Time)
+		hash := sha256.Sum256(bytesOfTimestamp)
+		if !bytes.Equal(hash[:], message.Token[:]) {
+			fmt.Println("invalid token")
+		}
+		peerPub, _, err := btcec.RecoverCompact(btcec.S256(), message.Sig.Content, message.Token[:])
+		if err != nil {
+			fmt.Println("unrecoverable key")
+			return false
+		}
+		if !bytes.Equal(peerPub.SerializeCompressed(), message.Key.Content[:]) {
+			fmt.Println("unauthenticated key")
+			return false
+		}
+	} else {
+		return false
+	}
+	return true
 }
 
 func (node *Node) handlePackedTransaction(c *Connection, packedTransaction chain.PackedTransaction) {
@@ -187,7 +367,6 @@ func (node *Node) Connect(c *Connection) error {
 		fmt.Println(err)
 		return err
 	}
-	c.Connecting = true
 	c.Conn = conn
 	node.newConn <- c
 	return nil
@@ -200,6 +379,7 @@ func (node *Node) addConnection(c *Connection) {
 		node.addNewOutbound(c)
 		node.sendHandshake(c)
 	}
+	c.Connected = true
 }
 
 func (node *Node) removeConnection(c *Connection) {
@@ -213,25 +393,25 @@ func (node *Node) removeConnection(c *Connection) {
 func (node *Node) addNewOutbound(c *Connection) {
 	node.Lock()
 	defer node.Unlock()
-	node.OutboundConns[c.PeerAddress] = c
+	node.Conns[c.PeerAddress] = c
 }
 
 func (node *Node) removeOutbound(c *Connection) {
 	node.Lock()
 	defer node.Unlock()
-	delete(node.OutboundConns, c.PeerAddress)
+	delete(node.Conns, c.PeerAddress)
 }
 
 func (node *Node) addNewInbound(c *Connection) {
 	node.Lock()
 	defer node.Unlock()
-	node.InboundConns[c.Conn.RemoteAddr().String()] = c
+	node.Conns[c.Conn.RemoteAddr().String()] = c
 }
 
 func (node *Node) removeInbound(c *Connection) {
 	node.Lock()
 	defer node.Unlock()
-	delete(node.InboundConns, c.Conn.RemoteAddr().String())
+	delete(node.Conns, c.Conn.RemoteAddr().String())
 }
 
 func (node *Node) handleConnection(c *Connection) {

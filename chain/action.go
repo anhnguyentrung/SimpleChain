@@ -12,6 +12,14 @@ type Action struct {
 	Data 			ActionData
 }
 
+type ActionReceipt struct {
+	Receiver AccountName
+	ActDigest SHA256Type
+	GlobalSequence uint64
+	RecvSequence uint64
+	AuthSequence map[AccountName]uint64
+}
+
 type ActionData struct {
 	HexData  []byte
 	Data     interface{}

@@ -24,3 +24,7 @@ type Authority struct {
 	Waits 		[]WaitWeight
 }
 
+type AuthorizationManager struct {
+
+}
+

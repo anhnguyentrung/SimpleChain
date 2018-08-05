@@ -18,5 +18,3 @@ func main() {
 	r := add(a, b)
 	fmt.Println(r)
 }
-
-

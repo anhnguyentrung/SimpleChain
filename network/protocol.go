@@ -36,6 +36,12 @@ type GoAwayMessage struct {
 	NodeId chain.SHA256Type
 }
 
+func NewGoAwayMessage(reason GoAwayReason) GoAwayMessage {
+	return GoAwayMessage{
+		Reason:reason,
+	}
+}
+
 type TimeMessage struct {
 	Origin time.Time
 	Receive time.Time

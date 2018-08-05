@@ -18,6 +18,20 @@ type TransactionHeader struct{
 	DelaySec Varuint32
 }
 
+type SigningKeys struct {
+	ChainId SHA256Type
+	PublicKeys []crypto.PublicKey
+}
+
+type TransactionMetaData struct {
+	Id SHA256Type
+	Signed SHA256Type
+	Trx SignedTransaction
+	PackedTrx PackedTransaction
+	SigningKeys SigningKeys
+	Accepted bool
+}
+
 type Transaction struct {
 	TransactionHeader
 	ContextFreeActions []Action
