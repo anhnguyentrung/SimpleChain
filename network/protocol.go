@@ -36,6 +36,23 @@ type GoAwayMessage struct {
 	NodeId chain.SHA256Type
 }
 
+func (gam GoAwayMessage) reasonToString() string {
+	switch gam.Reason {
+	case Self : return "self connect";
+	case Duplicate : return "duplicate";
+	case Wrong_Chain : return "wrong chain";
+	case Wrong_Version : return "wrong version";
+	case Forked : return "chain is forked";
+	case Unlinkable : return "unlinkable block received";
+	case Bad_Transaction : return "bad transaction";
+	case Validation : return "invalid block";
+	case Authentication : return "authentication failure";
+	case Fatal_Other : return "some other failure";
+	case Benign_Other : return "some other non-fatal condition";
+	default : return "some crazy reason";
+	}
+}
+
 func NewGoAwayMessage(reason GoAwayReason) GoAwayMessage {
 	return GoAwayMessage{
 		Reason:reason,

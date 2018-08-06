@@ -160,7 +160,32 @@ func (sm *SyncManager) startSync(c *Connection, node *Node, target uint32) {
 func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id chain.SHA256Type) {
 	req := RequestMessage{}
 	req.ReqBlocks.Mode = Catch_Up
-	
+	for _, cc := range node.Conns {
+		if bytes.Equal(cc.ForkHead[:], id[:]) || cc.ForkHeadNum > num {
+			req.ReqBlocks.Mode = None
+			break
+		}
+	}
+	if req.ReqBlocks.Mode == Catch_Up {
+		c.ForkHead = id
+		c.ForkHeadNum = num
+		if sm.state == Lib_Catchup {
+			return
+		}
+		sm.setState(Head_Catchup)
+	} else {
+		c.ForkHead = chain.SHA256Type{}
+		c.ForkHeadNum = 0
+	}
+	req.ReqTrx.Mode = None
+	msg := Message{
+		Header: MessageHeader{
+			Type:Request,
+			Length:0,
+		},
+		Content:req,
+	}
+	c.sendMessage(msg)
 }
 
 func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, node *Node) {
@@ -208,6 +233,40 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 		}
 	}
 	if head <= message.HeadNum {
+		sm.verifyCatchup(c, node, message.HeadNum, message.HeadId)
+		return
+	} else {
+		if message.Generation > 1 {
+			noticeMsg := NoticeMessage{}
+			noticeMsg.KnownTrx.Mode = None
+			noticeMsg.KnownBlocks.Mode = Catch_Up
+			noticeMsg.KnownBlocks.Pending = head
+			noticeMsg.KnownTrx.Ids = append(noticeMsg.KnownTrx.Ids, headId)
+			msg := Message{
+				Header: MessageHeader{
+					Type:Notice,
+					Length:0,
+				},
+				Content:noticeMsg,
+			}
+			c.sendMessage(msg)
+			return
+		}
+		c.Syncing = true
+		return
+	}
+}
 
+func (sm *SyncManager) receiveNotice(c *Connection, node *Node, message NoticeMessage) {
+	if message.KnownBlocks.Mode == Catch_Up {
+		if len(message.KnownBlocks.Ids) == 0 {
+			fmt.Println("got a catch up with ids size = 0")
+		} else {
+			sm.verifyCatchup(c, node, message.KnownBlocks.Pending, message.KnownBlocks.Ids[len(message.KnownBlocks.Ids)-1])
+		}
+	} else {
+		c.LastHandshakeReceived.LastIrreversibleBlockNum = message.KnownTrx.Pending
+		sm.resetLibNum(c, node)
+		sm.startSync(c, node, message.KnownBlocks.Pending)
 	}
 }

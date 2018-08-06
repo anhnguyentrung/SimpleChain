@@ -1,6 +1,9 @@
 package chain
 
-import "blockchain/database"
+import (
+	"blockchain/database"
+	bytes2 "bytes"
+)
 
 type BlockChainConfig struct {
 	BlocksDir string
@@ -52,4 +55,25 @@ func (bc *BlockChain) GetBlockIdForNum(blockNum uint32) SHA256Type {
 	}
 	signedBlock := bc.Blog.ReadBlockByNum(blockNum)
 	return signedBlock.Id()
+}
+
+func (bc *BlockChain) FetchBlockById(id SHA256Type) *SignedBlock {
+	state := bc.ForkDatabase.GetBlock(id)
+	if state != nil {
+		return state.Block
+	}
+	block := bc.FetchBlockByNum(NumFromId(id))
+	if block != nil && bytes2.Equal(block.Id()[:], id[:]) {
+		return block
+	}
+	return nil
+}
+
+func (bc *BlockChain) FetchBlockByNum(num uint32) *SignedBlock {
+	blockState := bc.ForkDatabase.GetBlockInCurrentChainIdNum(num)
+	if blockState != nil {
+		return blockState.Block
+	}
+	signedBlock := bc.Blog.ReadBlockByNum(num)
+	return signedBlock
 }

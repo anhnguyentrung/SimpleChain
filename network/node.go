@@ -32,6 +32,9 @@ type Connection struct {
 	ForkHead chain.SHA256Type
 	ForkHeadNum uint32
 	NetworkVersion uint16
+	TransactionStates []chain.TransactionState
+	BlockStates []*PeerBlockState
+	LastRequest RequestMessage
 }
 
 func NewConnection(peerAddr string) *Connection {
@@ -92,6 +95,28 @@ func (c *Connection) sendGoAwayMessage(reason GoAwayReason) error {
 	return c.sendMessage(msg)
 }
 
+func (c *Connection) addPeerBlock(entry *PeerBlockState) bool {
+	var block *PeerBlockState = nil
+	for _, blk := range c.BlockStates {
+		if bytes.Equal(blk.Id[:], entry.Id[:]) {
+			block = blk
+			break
+		}
+	}
+	added := (block == nil)
+	if added {
+		c.BlockStates = append(c.BlockStates, entry)
+	} else {
+		block.IsKnown = true
+		if block.BlockNum == 0 {
+			block.BlockNum = entry.BlockNum
+		} else {
+			block.RequestedTime = time.Now()
+		}
+	}
+	return added
+}
+
 type Packet struct {
 	connection *Connection
 	message Message
@@ -123,6 +148,7 @@ type Node struct {
 	doneConn chan *Connection // triger when a inbound connection is disconnected
 	newPacket chan *Packet // trigger when received message packet from a inbound connection
 	SyncManager *SyncManager
+	Dispatcher *DispatchManager
 	BlockChain chain.BlockChain
 	LocalTrxs []NodeTransactionState
 }
@@ -188,6 +214,7 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 		node.handleHandshakeMessage(c, msg)
 	case ChainSizeMessage:
 	case GoAwayMessage:
+		node.handleGoAwayMessage(c, msg)
 	case TimeMessage:
 	case NoticeMessage:
 	case RequestMessage:
@@ -219,6 +246,13 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	return valid
 }
 
+func (node *Node) handleGoAwayMessage(c *Connection, message GoAwayMessage) {
+	if message.Reason == Duplicate {
+		c.NodeId = message.NodeId
+	}
+	c.Close()
+}
+
 func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
 	fmt.Println("received handshake message", message.ChainId)
 	if !isValidHandshakeMessage(message) {
@@ -228,8 +262,8 @@ func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage
 	}
 	libNum := node.BlockChain.LastIrreversibleBlockNum()
 	peerLib := message.LastIrreversibleBlockNum
-	if c.Connecting {
-		c.Connecting = false
+	if !c.Connected {
+		c.Connected = true
 	}
 	if message.Generation == 1 {
 		if message.NodeId == node.NodeId {
@@ -288,10 +322,59 @@ func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage
 		}
 		if c.SendHandshakeCount == 0 {
 			node.sendHandshake(c)
+
 		}
 	}
 	c.LastHandshakeReceived = message
-	node.SyncManager.
+	node.SyncManager.ReceiveHanshake(message, c, node)
+}
+
+func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
+	c.Connected = true
+	req:= RequestMessage{}
+	sendReq := false
+	switch message.KnownTrx.Mode {
+	case None:
+		break
+	case Last_Irr_Catch_Up:
+		c.LastHandshakeReceived.HeadNum = message.KnownTrx.Pending
+		req.ReqTrx.Mode = None
+	case Catch_Up:
+		if message.KnownTrx.Pending > 0 {
+			req.ReqTrx.Mode = Catch_Up
+			sendReq = true
+			knownSum := len(node.LocalTrxs)
+			if knownSum > 0 {
+				for _, trx := range node.LocalTrxs {
+					req.ReqTrx.Ids = append(req.ReqTrx.Ids, trx.Id)
+				}
+			}
+		}
+	case Normal:
+		node.Dispatcher.receiveNotice(c, node, message, false)
+	}
+	switch message.KnownBlocks.Mode {
+	case None:
+		if message.KnownTrx.Mode != Normal {
+			return
+		}
+	case Catch_Up, Last_Irr_Catch_Up:
+		node.SyncManager.receiveNotice(c, node, message)
+	case Normal:
+		node.Dispatcher.receiveNotice(c, node, message, false)
+	default:
+		break
+	}
+	if sendReq {
+		msg := Message{
+			Header: MessageHeader{
+				Type:Request,
+				Length:0,
+			},
+			Content:req,
+		}
+		c.sendMessage(msg)
+	}
 
 }
 
@@ -561,5 +644,16 @@ func (node *Node) sendHandshake(c *Connection) (err error) {
 		fmt.Println("error occurred when sending message")
 	}
 	return
+}
+
+func (node *Node) findLocalTrx(id chain.SHA256Type) *NodeTransactionState {
+	var foundTrx *NodeTransactionState = nil
+	for _, trx := range node.LocalTrxs {
+		if bytes.Equal(trx.Id[:], id[:]) {
+			foundTrx = &trx
+			break
+		}
+	}
+	return foundTrx
 }
 

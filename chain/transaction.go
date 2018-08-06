@@ -53,6 +53,15 @@ type PackedTransaction struct {
 	unPackedTrx *Transaction
 }
 
+type TransactionState struct {
+	Id SHA256Type
+	IsKnownByPeer bool
+	IsNoticedByPeer bool
+	BlockNum uint32
+	Expires uint64
+	RequestedTime time.Time
+}
+
 // when the sender sends a transaction, they will assign it an id which will be passed back to sender if the transaction fails for some reason
 type DeferredTransaction struct {
 	SenderId uint32
