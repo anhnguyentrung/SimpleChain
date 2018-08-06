@@ -48,6 +48,20 @@ func (bc *BlockChain) LastIrreversibleBlockNum() uint32 {
 	return max(bc.Head.DPOSIrreversibleBlockNum, bc.Head.BFTIrreversibleBlockNum)
 }
 
+func (bc *BlockChain) LastIrreversibleBlockId() *SHA256Type {
+	libNum := bc.LastIrreversibleBlockNum()
+	taposBlockSummary := bc.DB.GetBlockSummaryObject(libNum)
+	if taposBlockSummary != nil {
+		return &taposBlockSummary.BlockId
+	}
+	block := bc.FetchBlockByNum(libNum)
+	if block != nil {
+		blockId := block.Id()
+		return &blockId
+	}
+	return nil
+}
+
 func (bc *BlockChain) GetBlockIdForNum(blockNum uint32) SHA256Type {
 	blockState := bc.ForkDatabase.GetBlockInCurrentChainIdNum(blockNum)
 	if blockState != nil {

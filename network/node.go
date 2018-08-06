@@ -126,7 +126,7 @@ type NodeTransactionState struct{
 	Id chain.SHA256Type
 	Expires time.Time
 	PackedTrx chain.PackedTransaction
-	serializedTrx []byte
+	//serializedTrx []byte
 	BlockNum uint32
 	TrueBlock uint32
 	Requests uint32
@@ -217,6 +217,7 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 		node.handleGoAwayMessage(c, msg)
 	case TimeMessage:
 	case NoticeMessage:
+		node.handleNotice(c, msg)
 	case RequestMessage:
 	case SyncRequestMessage:
 	case chain.SignedBlock:
@@ -375,7 +376,158 @@ func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
 		}
 		c.sendMessage(msg)
 	}
+}
 
+func (node *Node) handleRequest(c *Connection, message RequestMessage) {
+	switch message.ReqBlocks.Mode {
+	case Catch_Up:
+		fmt.Println("Received request message: catch up")
+		node.blockSendBranch(c)
+	case Normal:
+		fmt.Println("Received request message: normal")
+		node.blockSend(c, message.ReqBlocks.Ids)
+	default:
+		break
+	}
+
+	switch message.ReqTrx.Mode {
+	case Catch_Up:
+		node.transactionSendPending(c, message.ReqTrx.Ids)
+	case Normal:
+		node.transactionSend(c, message.ReqTrx.Ids)
+	case None:
+		if message.ReqBlocks.Mode == None {
+			c.Syncing = false
+		}
+	default:
+		break
+	}
+}
+
+func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
+	for _, tx := range node.LocalTrxs {
+		if tx.BlockNum == 0 {
+			found := false
+			for _, known := range ids {
+				if known == tx.Id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				msg := Message{
+					Header: MessageHeader{
+						Type:PackedTransaction,
+						Length:0,
+					},
+					Content:tx.PackedTrx,
+				}
+				c.sendMessage(msg)
+			}
+		}
+	}
+}
+
+func (node *Node) transactionSend(c *Connection, ids []chain.SHA256Type) {
+	for _, id := range ids {
+		tx := node.findLocalTrx(id)
+		if tx != nil {
+			msg := Message{
+				Header: MessageHeader{
+					Type:PackedTransaction,
+					Length:0,
+				},
+				Content:tx.PackedTrx,
+			}
+			c.sendMessage(msg)
+		}
+	}
+}
+
+func (node *Node) blockSend(c *Connection, ids []chain.SHA256Type) {
+	blockchain := node.BlockChain
+	count := 0
+	for _, id := range ids {
+		count += 1
+		block := blockchain.FetchBlockById(id)
+		if block != nil {
+			msg := Message{
+				Header: MessageHeader{
+					Type:SignedBlock,
+					Length:0,
+				},
+				Content:*block,
+			}
+			c.sendMessage(msg)
+		} else {
+			break
+		}
+	}
+}
+
+func (node *Node) blockSendBranch(c *Connection) {
+	blockchain := node.BlockChain
+	headNum := blockchain.Head.BlockNum
+	noticeMsg := NoticeMessage{}
+	noticeMsg.KnownBlocks.Mode = Normal
+	noticeMsg.KnownBlocks.Pending = 0
+	if headNum == 0 {
+		msg := Message{
+			Header: MessageHeader{
+				Type:Notice,
+				Length:0,
+			},
+			Content:noticeMsg,
+		}
+		c.sendMessage(msg)
+		return
+	}
+	libId := blockchain.LastIrreversibleBlockId()
+	headId := blockchain.Head.Id
+	if libId == nil {
+		fmt.Println("unable to retrieve block data")
+		msg := Message{
+			Header: MessageHeader{
+				Type:Notice,
+				Length:0,
+			},
+			Content:noticeMsg,
+		}
+		c.sendMessage(msg)
+		return
+	}
+	bStack := make([]*chain.SignedBlock, 0)
+	nullId := chain.SHA256Type{}
+	for bid := headId; !bytes.Equal(bid[:], libId[:]) && !bytes.Equal(bid[:], nullId[:]); {
+		b := blockchain.FetchBlockById(bid)
+		if b != nil {
+			bid = b.Previous
+			bStack = append(bStack, b)
+		} else {
+			break
+		}
+	}
+	if len(bStack) > 0 {
+		last := bStack[len(bStack)-1]
+		if bytes.Equal(last.Previous[:], libId[:]) {
+			for len(bStack) > 0 {
+				msg := Message{
+					Header: MessageHeader{
+						Type:SignedBlock,
+						Length:0,
+					},
+					Content:*bStack[len(bStack)-1],
+				}
+				c.sendMessage(msg)
+				// pop back
+				bStack[len(bStack)-1] = nil
+				bStack = bStack[:len(bStack)-1]
+			}
+		} else {
+			fmt.Println("Nothing to send on fork request")
+		}
+	}
+	c.Syncing = false
 }
 
 func (node *Node) authenticatePeer(message HandshakeMessage) bool {
