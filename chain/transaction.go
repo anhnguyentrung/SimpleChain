@@ -7,6 +7,7 @@ import (
 	"compress/zlib"
 	"log"
 	"io/ioutil"
+	"crypto/sha256"
 )
 
 type TransactionHeader struct{
@@ -94,6 +95,11 @@ func (tx *Transaction) Pack(compression CompressionType) *PackedTransaction{
 	}
 }
 
+func (tx *Transaction) Id() SHA256Type  {
+	buf, _ := MarshalBinary(*tx)
+	return sha256.Sum256(buf)
+}
+
 func (s *SignedTransaction) Pack(compression CompressionType) *PackedTransaction {
 	tx := s.Transaction
 	var packedTrx []byte
@@ -149,6 +155,14 @@ func (p *PackedTransaction) GetSingedTransaction() *SignedTransaction {
 		}
 	}
 	return s
+}
+
+func (p *PackedTransaction) Id() SHA256Type {
+	return p.GetTransaction().Id()
+}
+
+func (p *PackedTransaction) Expiration() time.Time {
+	return p.GetTransaction().Expiration
 }
 
 func (tx *Transaction) zlibCompress() bytes {

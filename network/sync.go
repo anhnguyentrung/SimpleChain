@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"bytes"
 	"blockchain/chain"
+	"time"
 )
 
 type states uint8
@@ -13,6 +14,13 @@ const(
 	Head_Catchup
 	In_Sync
 )
+
+type SyncState struct {
+	StartBlock uint32
+	EndBlock uint32
+	Last uint32
+	StartTime time.Time
+}
 
 type SyncManager struct {
 	syncKnownLibNum uint32
@@ -52,6 +60,13 @@ func (sm *SyncManager) setState(newState states) {
 		return
 	}
 	sm.state = newState
+}
+
+func (sm *SyncManager) isActive(c *Connection, node *Node) bool {
+	if c!= nil && sm.state == Head_Catchup {
+		return !bytes.Equal(c.ForkHead[:], chain.SHA256Type{}[:]) && c.ForkHeadNum < node.BlockChain.Head.BlockNum
+	}
+	return sm.state != In_Sync
 }
 
 func (sm *SyncManager) requestNextChunk(c *Connection, node *Node) {

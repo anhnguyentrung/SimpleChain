@@ -34,7 +34,8 @@ type Connection struct {
 	NetworkVersion uint16
 	TransactionStates []chain.TransactionState
 	BlockStates []*PeerBlockState
-	LastRequest RequestMessage
+	LastRequest *RequestMessage
+	PeerRequested *SyncState
 }
 
 func NewConnection(peerAddr string) *Connection {
@@ -151,6 +152,7 @@ type Node struct {
 	Dispatcher *DispatchManager
 	BlockChain chain.BlockChain
 	LocalTrxs []NodeTransactionState
+	Producer *ProducerManager
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -219,7 +221,9 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	case NoticeMessage:
 		node.handleNotice(c, msg)
 	case RequestMessage:
+		node.handleRequest(c, msg)
 	case SyncRequestMessage:
+		node.handleSyncRequest(c, msg)
 	case chain.SignedBlock:
 	case chain.PackedTransaction:
 	}
@@ -404,6 +408,36 @@ func (node *Node) handleRequest(c *Connection, message RequestMessage) {
 	}
 }
 
+func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
+	if message.EndBlock == 0 {
+		c.PeerRequested = nil
+	} else {
+		c.PeerRequested = &SyncState{
+			StartBlock:message.StartBlock,
+			EndBlock:message.EndBlock,
+			Last:message.StartBlock - 1,
+		}
+		blockchain := node.BlockChain
+		c.PeerRequested.Last += 1
+		num := c.PeerRequested.Last
+		triggerSend := num == c.PeerRequested.StartBlock
+		if num == c.PeerRequested.EndBlock {
+			c.PeerRequested = nil
+		}
+		block := blockchain.FetchBlockByNum(num)
+		if block != nil && triggerSend {
+			msg := Message{
+				Header: MessageHeader{
+					Type:SignedBlock,
+					Length:0,
+				},
+				Content:*block,
+			}
+			c.sendMessage(msg)
+		}
+	}
+}
+
 func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
 	for _, tx := range node.LocalTrxs {
 		if tx.BlockNum == 0 {
@@ -575,6 +609,52 @@ func (node *Node) authenticatePeer(message HandshakeMessage) bool {
 
 func (node *Node) handlePackedTransaction(c *Connection, packedTransaction chain.PackedTransaction) {
 	fmt.Println("received packed transaction")
+	//if node.SyncManager.isActive(c, node) {
+	//	fmt.Println("got a trx during sync - dropping")
+	//	return
+	//}
+	//tid := packedTransaction.Id()
+	//foundTx := node.findLocalTrx(tid)
+	//if foundTx != nil {
+	//	fmt.Println("got a duplicate transaction - dropping")
+	//	return
+	//}
+	//node.Dispatcher.receiveTransaction(c, tid)
+}
+
+func (node *Node) onIncomingTransaction(packedTrx *chain.PackedTransaction) {
+	//blockchain := node.BlockChain
+	//pendingBlockState := blockchain.PendingBlocKState()
+	//if pendingBlockState == nil {
+	//	return
+	//}
+	//blockTime := pendingBlockState.Header.Timestamp.ToTime()
+	//id := packedTrx.Id()
+	//if packedTrx.Expiration().Before(blockTime) {
+	//	fmt.Println("expired transaction ", id)
+	//	return
+	//}
+	//if node.isKnownUnexpiredTransaction(id) {
+	//	fmt.Println("duplicate transaction ", id)
+	//	return
+	//}
+	//deadline := time.Now().Unix() * 1000 + MaxTransactionTime // ms
+	//deadlineIsSubjective := false
+	//if node.Producer.PendingBlockMode == Producing && (blockTime.Unix() * 1000) < deadline {
+	//	deadlineIsSubjective = true
+	//	deadline = blockTime.Unix() * 1000
+	//}
+
+}
+
+// entry point for new transaction to the block state
+// Check authorization here
+func (node *Node) pushTransaction(trx *chain.TransactionMetaData, deadline time.Time) {
+
+}
+
+func (node *Node) isKnownUnexpiredTransaction(id chain.SHA256Type) bool {
+	return node.BlockChain.DB.FindTransactionObject(id) != nil
 }
 
 func (node *Node) Close(c *Connection) {

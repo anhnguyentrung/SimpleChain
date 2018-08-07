@@ -1,14 +1,46 @@
 package database
 
-import "blockchain/chain"
+import (
+	"blockchain/chain"
+	"time"
+	"bytes"
+)
 
 type BlockSummaryObject struct {
 	BlockNum uint32
 	BlockId chain.SHA256Type
 }
 
+type TransactionObject struct {
+	TransactionId chain.SHA256Type
+	Expiration time.Time
+}
+
+type SharedProducerScheduleType struct {
+	Version uint32
+	Producers []chain.ProducerKey
+}
+
+type GlobalPropertyBlock struct {
+	ProposedScheduleBlockNum *uint32
+	ProposedSchedule *SharedProducerScheduleType
+	Configuation chain.ChainConfig
+}
+
+func (s *SharedProducerScheduleType) ProducerSchedulerType() chain.ProducerScheduleType {
+	result := chain.ProducerScheduleType{}
+	result.Version = s.Version
+	result.Producers = make([]chain.ProducerKey, len(s.Producers))
+	for _, pro := range s.Producers {
+		result.Producers = append(result.Producers, pro)
+	}
+	return result
+}
+
 type Database struct {
 	BlockSummaryObjects []*BlockSummaryObject
+	TransactionObjects []*TransactionObject
+	GPO *GlobalPropertyBlock
 }
 
 func (db *Database) GetBlockSummaryObject(blockNum uint32) *BlockSummaryObject {
@@ -20,4 +52,15 @@ func (db *Database) GetBlockSummaryObject(blockNum uint32) *BlockSummaryObject {
 		}
 	}
 	return foundObject
+}
+
+func (db *Database) FindTransactionObject(id chain.SHA256Type) *TransactionObject {
+	var trx *TransactionObject = nil
+	for _, obj := range db.TransactionObjects {
+		if bytes.Equal(trx.TransactionId[:], obj.TransactionId[:]) {
+			trx = obj
+			break
+		}
+	}
+	return trx
 }

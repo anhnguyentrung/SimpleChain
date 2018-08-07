@@ -41,6 +41,7 @@ const TCP  = "tcp"
 const MessageHeaderSize = 4
 const PeerAuthenticationInterval = 1 //second
 const SyncReqSpan = 100 //second
+const MaxTransactionTime = 30 // ms
 
 type MessageType interface {}
 type MessageHeader struct {

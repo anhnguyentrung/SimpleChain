@@ -4,6 +4,7 @@ import (
 	"blockchain/chain"
 	"fmt"
 	"time"
+	"bytes"
 )
 
 type BlockRequest struct {
@@ -106,6 +107,15 @@ func (dm *DispatchManager) receiveNotice(c *Connection, node *Node, message Noti
 			Content:req,
 		}
 		c.sendMessage(msg)
-		c.LastRequest = req
+		c.LastRequest = &req
+	}
+}
+
+func (dm *DispatchManager) receiveTransaction (c *Connection, id chain.SHA256Type) {
+	dm.ReceivedTransactions = append(dm.ReceivedTransactions, TransactionOrigin{id,c})
+	if c != nil &&
+	c.LastRequest != nil &&
+	c.LastRequest.ReqTrx.Mode != None && bytes.Equal(c.LastRequest.ReqTrx.Ids[len(c.LastRequest.ReqTrx.Ids)-1][:], id[:]) {
+		c.LastRequest = nil
 	}
 }
