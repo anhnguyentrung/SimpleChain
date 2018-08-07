@@ -23,7 +23,7 @@ type PendingState struct {
 type BlockChain struct {
 	Config BlockChainConfig
 	DB database.Database
-	ReversibleBlocks database.Database
+	ReversibleBlocks []*database.ReversibleBlockObject
 	Blog database.BlockLog
 	Pending *PendingState
 	Head *BlockState
@@ -144,8 +144,39 @@ func (bc *BlockChain) ClearExpiredInputTransaction() {
 			expriedIndexes = append(expriedIndexes, i)
 		}
 	}
-	for _, index := range expriedIndexes {
+	for _, index := range expriedIndexes{
 		bc.DB.TransactionObjects = removeTransactionObject(bc.DB.TransactionObjects, index)
 	}
+}
 
+func (bc *BlockChain) FinalizeBlock() {
+	if bc.Pending != nil {
+		log.Fatal("it is not valid to finalize when there is no pending block")
+	}
+	// the part relating to transaction will be added later
+	p := bc.Pending.PendingBlockState
+	p.Id = p.Header.Id()
+	bc.CreateBlockSumary(p.Id)
+}
+
+func (bc *BlockChain) CreateBlockSumary(id SHA256Type) {
+	blockNum := NumFromId(id)
+	bso := bc.DB.FindBlockSummaryObject(blockNum)
+	bso.BlockId = id
+}
+
+func (bc *BlockChain) CommitBlock() {
+	bc.Pending.PendingBlockState.Validated = true
+	newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
+	head := bc.ForkDatabase.Head
+	if newBsp != head {
+		log.Fatal("committed block did not become the new head in fork database")
+	}
+	if !bc.Replaying {
+		ubo := database.ReversibleBlockObject{}
+		ubo.BlockNum = bc.Pending.PendingBlockState.BlockNum
+		ubo.SetBlock(bc.Pending.PendingBlockState.Block)
+	}
+	//accept block. Use invoked method later
+	// TODO
 }

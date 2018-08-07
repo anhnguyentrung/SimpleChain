@@ -48,6 +48,14 @@ type BlockStatus uint8
 const(
 	Irreversible BlockStatus = iota
 	Validated   = 1
-	complete   = 2
-	incomplete  = 3
+	Complete   = 2
+	Incomplete  = 3
+)
+
+type BlockResult uint8
+
+const(
+	Succeeded BlockResult = iota
+	Failed = 1
+	Exhausted = 2
 )

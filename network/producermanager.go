@@ -7,6 +7,8 @@ import (
 	"time"
 	"fmt"
 	"math"
+	"bytes"
+	"log"
 )
 
 type PendingBlockMode uint8
@@ -82,7 +84,7 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 	return "", fmt.Errorf("producer does not exist")
 }
 
-func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) {
+func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) chain.BlockResult {
 	headBlockState := blockchain.Head
 	now := uint64(time.Now().UnixNano() / int64(time.Millisecond)) //ms
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano() / int64(time.Millisecond)) //ms
@@ -96,7 +98,7 @@ func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) {
 	pm.PendingBlockMode = Producing
 	scheduledProducer := headBlockState.GetScheduledProducer(blockTime)
 	currentWaterMark, hasWaterMark := pm.ProducerWaterMarks[scheduledProducer.ProducerName]
-	signatureProvider, hasSP := pm.SignatureProviders[scheduledProducer.BlockSigningKey.String()]
+	_, hasSP := pm.SignatureProviders[scheduledProducer.BlockSigningKey.String()]
 	_, err := pm.findProducer(scheduledProducer.ProducerName)
 	if err != nil {
 		pm.PendingBlockMode = Speculating
@@ -121,7 +123,33 @@ func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) {
 			}
 		}
 	}
+	blockchain.StartBlock(blockTime, blocksToConfirm, chain.Incomplete)
+	pbs := blockchain.PendingBlocKState()
+	if pbs != nil {
+		if pm.PendingBlockMode == Producing &&
+			!bytes.Equal(pbs.BlockSigningKey.Content, scheduledProducer.BlockSigningKey.Content){
+			pm.PendingBlockMode = Speculating
+		}
+		return chain.Succeeded
+	}
+	return chain.Failed
+}
 
+func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) {
+	if pm.PendingBlockMode != Producing {
+		log.Fatal("called produce_block while not actually producing")
+	}
+	pbs := blockchain.PendingBlocKState()
+	hbs := blockchain.Head
+	if pbs == nil {
+		log.Fatal("pending_block_state does not exist but it should, another plugin may have corrupted it")
+	}
+	signatureProvider, hasSP := pm.SignatureProviders[pbs.BlockSigningKey.String()]
+	if !hasSP {
+		log.Fatal("Attempting to produce a block for which we don't have the private key")
+	}
+	blockchain.FinalizeBlock()
+	blockchain.CommitBlock()
 }
 
 func min(a, b uint16) uint16 {

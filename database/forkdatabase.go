@@ -27,3 +27,9 @@ func (fb *ForkDatabase) GetBlock(id chain.SHA256Type) *chain.BlockState {
 	}
 	return nil
 }
+
+func (fb *ForkDatabase) Add(bs *chain.BlockState) *chain.BlockState {
+	fb.BlockStates = append(fb.BlockStates, bs)
+	fb.Head = fb.BlockStates[len(fb.BlockStates) - 1]
+	return bs
+}

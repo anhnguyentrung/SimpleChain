@@ -21,6 +21,16 @@ type SharedProducerScheduleType struct {
 	Producers []chain.ProducerKey
 }
 
+type ReversibleBlockObject struct {
+	BlockNum uint32
+	PackedBlock []byte
+}
+
+func (rb *ReversibleBlockObject) SetBlock(signedBlock *chain.SignedBlock) {
+	buf, _ := chain.MarshalBinary(*signedBlock)
+	rb.PackedBlock = buf
+}
+
 type GlobalPropertyBlock struct {
 	ProposedScheduleBlockNum *uint32
 	ProposedSchedule *SharedProducerScheduleType
@@ -63,4 +73,15 @@ func (db *Database) FindTransactionObject(id chain.SHA256Type) *TransactionObjec
 		}
 	}
 	return trx
+}
+
+func (db *Database) FindBlockSummaryObject(blockNum uint32) *BlockSummaryObject {
+	var bso *BlockSummaryObject = &BlockSummaryObject{BlockNum:blockNum}
+	for _, obj := range db.BlockSummaryObjects {
+		if obj.BlockNum == blockNum {
+			bso = obj
+			break
+		}
+	}
+	return bso
 }
