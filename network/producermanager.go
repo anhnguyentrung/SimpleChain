@@ -17,9 +17,7 @@ const (
 	Producing PendingBlockMode = iota
 	Speculating
 )
-type SignatureProviderType interface {
-	Sign(hash chain.SHA256Type) crypto.Signature
-}
+type SignatureProviderType func(hash chain.SHA256Type) crypto.Signature
 
 type ProducerManager struct {
 	SignatureProviders map[string]SignatureProviderType
@@ -32,7 +30,19 @@ type ProducerManager struct {
 }
 
 func NewProducerManager() ProducerManager {
-	return ProducerManager{}
+	pm := ProducerManager{}
+	pm.Producers = []chain.AccountName{"default"}
+	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
+	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
+	return pm
+}
+
+func makeKeySignatureProvider(wif string) SignatureProviderType {
+	priv, _ := crypto.NewPrivateKey(wif)
+	return func(hash chain.SHA256Type) crypto.Signature {
+		sig, _ := priv.Sign(hash[:])
+		return sig
+	}
 }
 
 func (pm ProducerManager) isProducerKey(pub crypto.PublicKey) bool {
@@ -79,8 +89,8 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain chain.BlockChain) {
 		if pm.PendingBlockMode == Producing {
 			duration := time.Duration(0)
 			if result == chain.Succeeded {
-				expiryTime := blockchain.Pending.PendingBlockState.Header.Timestamp.ToTime().UnixNano() / int64(time.Millisecond)
-				now := time.Now().UnixNano() / int64(time.Millisecond)
+				expiryTime := blockchain.Pending.PendingBlockState.Header.Timestamp.ToTime().UnixNano()
+				now := time.Now().UnixNano()
 				duration = time.Duration(expiryTime - now)
 			}
 			pm.timer = time.AfterFunc(duration, func() {
@@ -90,9 +100,9 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain chain.BlockChain) {
 		} else if pm.PendingBlockMode == Speculating && len(pm.Producers) != 0 {
 			wakeupTime := uint64(0)
 			for _, producer := range pm.Producers {
-				nextProducerBlockTime := pm.calculateNextBlockTime(blockchain, producer)
+				nextProducerBlockTime := pm.calculateNextBlockTime(blockchain, producer) // nanosecond
 				if nextProducerBlockTime != 0 {
-					producerWakeupTime := nextProducerBlockTime - chain.BLOCK_INTERVAL_MS
+					producerWakeupTime := nextProducerBlockTime - chain.BLOCK_INTERVAL_MS * uint64(time.Millisecond)
 					if wakeupTime != 0 {
 						wakeupTime = MinUint64(wakeupTime, producerWakeupTime)
 					} else {
@@ -103,7 +113,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain chain.BlockChain) {
 			if wakeupTime != 0 {
 				expiryTime := int64(wakeupTime)
 				fmt.Println("Specualtive Block Created; Scheduling Speculative/Production Change at ", expiryTime)
-				now := time.Now().UnixNano() / int64(time.Millisecond)
+				now := time.Now().UnixNano()
 				duration := time.Duration(expiryTime - now)
 				pm.timer = time.AfterFunc(duration, func() {
 					fmt.Println("schedule when failed")
@@ -152,7 +162,7 @@ func (pm *ProducerManager) calculateNextBlockTime(blockchain chain.BlockChain, p
 	if producerIndex == minimumSlotProducerIndex {
 		blockTs := chain.NewBlockTimeStamp()
 		blockTs.Slot = minimumSlot
-		return uint64(blockTs.ToTime().UnixNano() / int64(time.Millisecond))
+		return uint64(blockTs.ToTime().UnixNano())
 	} else {
 		producerDistance := producerIndex - minimumSlotProducerIndex
 		if producerDistance > producerIndex {
@@ -162,7 +172,7 @@ func (pm *ProducerManager) calculateNextBlockTime(blockchain chain.BlockChain, p
 		nextBlockSlot := firstMinimumProducerSlot + producerDistance * chain.PRODUCER_REPETITION
 		blockTs := chain.NewBlockTimeStamp()
 		blockTs.Slot = nextBlockSlot
-		return uint64(blockTs.ToTime().UnixNano() / int64(time.Millisecond))
+		return uint64(blockTs.ToTime().UnixNano())
 	}
 }
 
@@ -249,7 +259,7 @@ func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) {
 	}
 	blockchain.FinalizeBlock()
 	signer := func(digest chain.SHA256Type) crypto.Signature {
-		return signatureProvider.Sign(digest)
+		return signatureProvider(digest)
 	}
 	blockchain.SignBlock(signer)
 	blockchain.CommitBlock()
