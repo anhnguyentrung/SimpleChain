@@ -180,3 +180,9 @@ func (bc *BlockChain) CommitBlock() {
 	//accept block. Use invoked method later
 	// TODO
 }
+
+func (bc *BlockChain) SignBlock(signer SignerCallBack) {
+	p := bc.Pending.PendingBlockState
+	p.Sign(signer)
+	p.Block.SignedBlockHeader = p.Header
+}

@@ -212,6 +212,12 @@ func (bhs *BlockHeaderState) SetNewProducer(pending ProducerScheduleType) {
 	bhs.PendingScheduleLibNum = bhs.BlockNum
 }
 
+func (bhs *BlockHeaderState) Sign(signer SignerCallBack) {
+	buf, _ := MarshalBinary(bhs.Header)
+	d := sha256.Sum256(buf)
+	bhs.Header.ProducerSignature = signer(d)
+}
+
 func NewBlockState(head BlockHeaderState, when uint64) *BlockState {
 	newBs := &BlockState{
 		head.GenerateNext(when),

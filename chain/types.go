@@ -1,5 +1,7 @@
 package chain
 
+import "blockchain/crypto"
+
 type Name string
 type AccountName Name
 type PermissionName Name
@@ -59,3 +61,5 @@ const(
 	Failed = 1
 	Exhausted = 2
 )
+
+type SignerCallBack func(digest SHA256Type) crypto.Signature

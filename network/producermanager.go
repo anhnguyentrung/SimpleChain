@@ -149,6 +149,10 @@ func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) {
 		log.Fatal("Attempting to produce a block for which we don't have the private key")
 	}
 	blockchain.FinalizeBlock()
+	signer := func(digest chain.SHA256Type) crypto.Signature {
+		return signatureProvider.Sign(digest)
+	}
+	blockchain.SignBlock(signer)
 	blockchain.CommitBlock()
 }
 
