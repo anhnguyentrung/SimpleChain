@@ -54,7 +54,7 @@ type HeaderConfirmation struct {
 
 type BlockHeaderState struct {
 	Id SHA256Type
-	BlockNum uint32
+	BlockNum uint64
 	Header SignedBlockHeader
 	DPOSProposedIrreversibleBlockNum uint32
 	DPOSIrreversibleBlockNum uint32
