@@ -6,12 +6,6 @@ import (
 )
 
 type ChainConfig struct {
-	MaxTransactionLifetime uint32
-	DeferedTrxExpirationWindow uint32
-	MaxTransactionDelay uint32
-	MaxInlineActionSize uint32
-	MaxInlineActionDepth uint32
-	MaxAuthorityDepth uint32
 }
 
 type GenesisState struct {
@@ -22,14 +16,7 @@ type GenesisState struct {
 }
 
 func NewGenesisState() GenesisState {
-	initialConfig := ChainConfig{
-		MaxTransactionLifetime:DEFAULT_MAX_TRX_LIFETIME,
-		DeferedTrxExpirationWindow:DEFAULT_DEFERRED_TRX_EXPIRATION_WINDOW,
-		MaxTransactionDelay:DEFAULT_MAX_TRX_DELAY,
-		MaxInlineActionSize:DEFAULT_MAX_INLINE_ACTION_SIZE,
-		MaxInlineActionDepth:DEFAULT_MAX_INLINE_ACTION_DEPTH,
-		MaxAuthorityDepth:DEFAULT_MAX_AUTH_DEPTH,
-	}
+	initialConfig := ChainConfig{}
 	initialKey := DEFAULT_PUBLIC_KEY
 	initialTime := time.Date(2018, time.August, 8, 0, 0, 0, 0, time.UTC).UnixNano()
 	initialTs := NewBlockTimeStamp()

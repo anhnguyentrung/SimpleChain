@@ -151,7 +151,7 @@ type Node struct {
 	newPacket chan *Packet // trigger when received message packet from a inbound connection
 	SyncManager *SyncManager
 	Dispatcher *DispatchManager
-	BlockChain database.BlockChain
+	BlockChain *database.BlockChain
 	LocalTrxs []NodeTransactionState
 	Producer *ProducerManager
 }
@@ -892,4 +892,3 @@ func (node *Node) findLocalTrx(id chain.SHA256Type) *NodeTransactionState {
 	}
 	return foundTrx
 }
-

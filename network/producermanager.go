@@ -76,7 +76,7 @@ func (pm *ProducerManager) onIrreversibleBlock(lib *chain.SignedBlock) {
 	pm.IrreversibleBlockTime = lib.Timestamp.ToTime()
 }
 
-func (pm *ProducerManager) scheduleProductionLoop(blockchain database.BlockChain) {
+func (pm *ProducerManager) scheduleProductionLoop(blockchain *database.BlockChain) {
 	pm.timer.Stop()
 	result := pm.startBlock(blockchain)
 	defer pm.timer.Stop()
@@ -140,7 +140,7 @@ func MinUint64(a, b uint64) uint64 {
 	return b
 }
 
-func (pm *ProducerManager) calculateNextBlockTime(blockchain database.BlockChain, producerName chain.AccountName) uint64 {
+func (pm *ProducerManager) calculateNextBlockTime(blockchain *database.BlockChain, producerName chain.AccountName) uint64 {
 	pbs := blockchain.Pending.PendingBlockState
 	activeProducers := pbs.ActiveSchedule.Producers
 	hbt := pbs.Header.Timestamp
@@ -197,7 +197,8 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 	return "", fmt.Errorf("producer does not exist")
 }
 
-func (pm *ProducerManager) startBlock(blockchain database.BlockChain) chain.BlockResult {
+func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.BlockResult {
+	fmt.Println("start block")
 	headBlockState := blockchain.Head
 	now := uint64(time.Now().UnixNano())
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano()) //nanosecond
@@ -238,7 +239,7 @@ func (pm *ProducerManager) startBlock(blockchain database.BlockChain) chain.Bloc
 		}
 	}
 	blockchain.StartBlock(blockTime, blocksToConfirm, chain.Incomplete)
-	pbs := blockchain.PendingBlocKState()
+	pbs := blockchain.Pending.PendingBlockState
 	if pbs != nil {
 		if pm.PendingBlockMode == Producing &&
 			!bytes.Equal(pbs.BlockSigningKey.Content, scheduledProducer.BlockSigningKey.Content){
@@ -249,11 +250,11 @@ func (pm *ProducerManager) startBlock(blockchain database.BlockChain) chain.Bloc
 	return chain.Failed
 }
 
-func (pm *ProducerManager) produceBlock(blockchain database.BlockChain) error {
+func (pm *ProducerManager) produceBlock(blockchain *database.BlockChain) error {
 	if pm.PendingBlockMode != Producing {
 		return fmt.Errorf("called produce_block while not actually producing")
 	}
-	pbs := blockchain.PendingBlocKState()
+	pbs := blockchain.Pending.PendingBlockState
 	if pbs == nil {
 		return fmt.Errorf("pending_block_state does not exist but it should, another plugin may have corrupted it")
 	}

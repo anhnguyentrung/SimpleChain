@@ -6,7 +6,6 @@ import (
 	"blockchain/crypto"
 	"sort"
 	"log"
-	"fmt"
 )
 
 type BlockHeader struct {
@@ -14,11 +13,8 @@ type BlockHeader struct {
 	Producer AccountName
 	Confirmed uint16
 	Previous SHA256Type
-	TransactionMRoot SHA256Type
-	ActionMRoot SHA256Type
 	ScheducerVersion uint32
 	NewProducer ProducerScheduleType
-	HeaderExtensions []Extension
 }
 
 func (bh *BlockHeader) BlockNum() uint32 {
@@ -44,7 +40,6 @@ type SignedBlockHeader struct {
 type SignedBlock struct {
 	SignedBlockHeader
 	Transactions []TransactionReceipt
-	BlockExtensions []Extension
 }
 
 type HeaderConfirmation struct {
@@ -138,7 +133,7 @@ func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 		nextBhs.ConfirmCount = bhs.ConfirmCount[1:]
 		nextBhs.ConfirmCount = append(nextBhs.ConfirmCount, uint8(requiredConfs))
 	}
-	fmt.Println("next block time: ", nextBhs.Header.Timestamp.ToTime().UnixNano())
+	//fmt.Println("next block id: ", nextBhs.BlockNum)
 	return nextBhs
 }
 

@@ -10,10 +10,6 @@ import (
 )
 
 type BlockChainConfig struct {
-	BlocksDir string
-	StateDir string
-	StateSize uint64
-	ReversibleCacheSize uint64
 	Genesis chain.GenesisState
 }
 
@@ -25,7 +21,6 @@ func NewBlockChainConfig() BlockChainConfig {
 
 type PendingState struct {
 	PendingBlockState *chain.BlockState
-	Actions []chain.ActionReceipt
 	BlockStatus chain.BlockStatus
 }
 
@@ -37,13 +32,12 @@ type BlockChain struct {
 	Pending *PendingState
 	Head *chain.BlockState
 	ForkDatabase ForkDatabase
-	Authorization chain.AuthorizationManager
 	ChainId chain.SHA256Type
 	Replaying bool
 	UnAppliedTransactions map[chain.SHA256Type]*chain.TransactionMetaData
 }
 
-func NewBlockChain() BlockChain {
+func NewBlockChain() *BlockChain {
 	bc := BlockChain{}
 	bc.Config = NewBlockChainConfig()
 	bc.initializeForkDatabase()
@@ -55,7 +49,7 @@ func NewBlockChain() BlockChain {
 	bc.ChainId = bc.Config.Genesis.ComputeChainId()
 	bc.Pending = &PendingState{}
 	bc.Pending.PendingBlockState = &chain.BlockState{}
-	return bc
+	return &bc
 }
 
 func max(a, b uint32) uint32 {
@@ -151,13 +145,6 @@ func (bc *BlockChain) FetchBlockByNum(num uint32) *chain.SignedBlock {
 	return signedBlock
 }
 
-func (bc *BlockChain) PendingBlocKState() *chain.BlockState {
-	if bc.Pending != nil {
-		return bc.Pending.PendingBlockState
-	}
-	return nil
-}
-
 func (bc *BlockChain) AbortBlock() {
 	if bc.Pending != nil {
 		for _, trx := range bc.Pending.PendingBlockState.Trxs {
@@ -173,7 +160,9 @@ func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.
 	}
 	// generate pending block
 	bc.Pending.BlockStatus = s
+	fmt.Println("old block id: ", bc.Pending.PendingBlockState.BlockNum)
 	bc.Pending.PendingBlockState = chain.NewBlockState(bc.Head.BlockHeaderState, when)
+	fmt.Println("next block id: ", bc.Pending.PendingBlockState.BlockNum)
 	bc.Pending.PendingBlockState.InCurrentChain = true
 	bc.Pending.PendingBlockState.SetConfirmed(confirmBlockCount)
 	wasPendingPromoted := bc.Pending.PendingBlockState.MaybePromotePending()
@@ -208,6 +197,7 @@ func (bc *BlockChain) ClearExpiredInputTransaction() {
 }
 
 func (bc *BlockChain) FinalizeBlock() {
+	fmt.Println("finalize block")
 	if bc.Pending == nil {
 		log.Fatal("it is not valid to finalize when there is no pending block")
 	}
@@ -224,10 +214,11 @@ func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
 }
 
 func (bc *BlockChain) CommitBlock() {
+	fmt.Println("commit block")
 	bc.Pending.PendingBlockState.Validated = true
 	newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
-	head := bc.ForkDatabase.Head
-	if newBsp != head {
+	bc.Head = bc.ForkDatabase.Head
+	if newBsp != bc.Head {
 		log.Fatal("committed block did not become the new head in fork database")
 	}
 	if !bc.Replaying {
@@ -235,6 +226,7 @@ func (bc *BlockChain) CommitBlock() {
 		ubo.BlockNum = bc.Pending.PendingBlockState.BlockNum
 		ubo.SetBlock(bc.Pending.PendingBlockState.Block)
 	}
+	//fmt.Println("block id: ", bc.Pending.PendingBlockState.BlockNum)
 	//accept block. Use invoked method later
 	// TODO
 }
