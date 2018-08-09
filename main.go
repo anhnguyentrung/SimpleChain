@@ -13,7 +13,7 @@ func main() {
 	copy(node.ChainId[:], chainId)
 	node.NodeId = node.ChainId
 	privateKey, _ := crypto.NewPrivateKey("5JRFptLJfq16Qk9fZummqyKkhuaDjK5R1PAp1uGZ1E29SXVUfbJ")
-	node.PrivateKeys[privateKey.PublicKey().String()] = *privateKey
+	node.PrivateKeys[privateKey.PublicKey().String()] = privateKey
 	done := make(chan bool)
 	node.Start()
 	<- done

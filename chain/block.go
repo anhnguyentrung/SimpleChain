@@ -54,7 +54,7 @@ type HeaderConfirmation struct {
 
 type BlockHeaderState struct {
 	Id SHA256Type
-	BlockNum uint64
+	BlockNum uint32
 	Header SignedBlockHeader
 	DPOSProposedIrreversibleBlockNum uint32
 	DPOSIrreversibleBlockNum uint32
@@ -68,6 +68,13 @@ type BlockHeaderState struct {
 	BlockSigningKey crypto.PublicKey
 	ConfirmCount []uint8
 	Confirmations []HeaderConfirmation
+}
+
+func NewBlockHeaderState() BlockHeaderState {
+	return BlockHeaderState{
+		ProducerToLastProduced: make(map[AccountName]uint32, 0),
+		ProducerToLastImpliedIRB: make(map[AccountName]uint32, 0),
+	}
 }
 
 type BlockState struct {
@@ -99,7 +106,7 @@ func (bhs *BlockHeaderState) GetScheduledProducer(t uint64) ProducerKey  {
 }
 
 func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
-	nextBhs := BlockHeaderState{}
+	nextBhs := NewBlockHeaderState()
 	newBlockTs := NewBlockTimeStamp()
 	newBlockTs.SetTime(when)
 	newBlockTs.Slot = bhs.Header.Timestamp.Slot + 1

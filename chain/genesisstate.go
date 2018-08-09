@@ -2,6 +2,7 @@ package chain
 
 import (
 	"crypto/sha256"
+	"time"
 )
 
 type ChainConfig struct {
@@ -29,8 +30,14 @@ func NewGenesisState() GenesisState {
 		MaxInlineActionDepth:DEFAULT_MAX_INLINE_ACTION_DEPTH,
 		MaxAuthorityDepth:DEFAULT_MAX_AUTH_DEPTH,
 	}
+	initialKey := DEFAULT_PUBLIC_KEY
+	initialTime := time.Date(2018, time.August, 8, 0, 0, 0, 0, time.UTC).UnixNano() / int64(time.Millisecond)
+	initialTs := NewBlockTimeStamp()
+	initialTs.SetTime(uint64(initialTime))
 	return GenesisState{
 		InitialConfiguration:initialConfig,
+		InitialTimestamp: initialTs,
+		InitialKey: initialKey,
 	}
 }
 

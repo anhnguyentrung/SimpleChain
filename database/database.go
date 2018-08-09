@@ -22,7 +22,7 @@ type SharedProducerScheduleType struct {
 }
 
 type ReversibleBlockObject struct {
-	BlockNum uint64
+	BlockNum uint32
 	PackedBlock []byte
 }
 

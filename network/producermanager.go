@@ -21,7 +21,7 @@ type SignatureProviderType func(hash chain.SHA256Type) crypto.Signature
 type ProducerManager struct {
 	SignatureProviders map[string]SignatureProviderType
 	Producers []chain.AccountName
-	ProducerWaterMarks map[chain.AccountName]uint64
+	ProducerWaterMarks map[chain.AccountName]uint32
 	PendingBlockMode PendingBlockMode
 	PersitentTransactions []*database.TransactionObject
 	IrreversibleBlockTime time.Time
@@ -31,6 +31,7 @@ type ProducerManager struct {
 func NewProducerManager() *ProducerManager {
 	pm := ProducerManager{}
 	pm.Producers = []chain.AccountName{chain.DEFAULT_PRODUCER_NAME}
+	pm.SignatureProviders = make(map[string]SignatureProviderType, 0)
 	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
 	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
 	return &pm
@@ -63,7 +64,7 @@ func (pm *ProducerManager) Startup(node *Node) {
 	if len(pm.Producers) > 0 {
 		fmt.Printf("launching block production for %d producer at %s", len(pm.Producers), time.Now().String())
 	}
-
+	pm.scheduleProductionLoop(blockchain)
 }
 
 func maxTime() time.Time {
@@ -74,7 +75,7 @@ func (pm *ProducerManager) onIrreversibleBlock(lib *chain.SignedBlock) {
 	pm.IrreversibleBlockTime = lib.Timestamp.ToTime()
 }
 
-func (pm *ProducerManager) scheduleProductionLoop(blockchain chain.BlockChain) {
+func (pm *ProducerManager) scheduleProductionLoop(blockchain database.BlockChain) {
 	pm.timer.Stop()
 	result := pm.startBlock(blockchain)
 	defer pm.timer.Stop()
@@ -138,7 +139,7 @@ func MinUint64(a, b uint64) uint64 {
 	return b
 }
 
-func (pm *ProducerManager) calculateNextBlockTime(blockchain chain.BlockChain, producerName chain.AccountName) uint64 {
+func (pm *ProducerManager) calculateNextBlockTime(blockchain database.BlockChain, producerName chain.AccountName) uint64 {
 	pbs := blockchain.Pending.PendingBlockState
 	activeProducers := pbs.ActiveSchedule.Producers
 	hbt := pbs.Header.Timestamp
@@ -152,14 +153,14 @@ func (pm *ProducerManager) calculateNextBlockTime(blockchain chain.BlockChain, p
 	if foundIndex == -1 {
 		return 0
 	}
-	minimumOffset := uint64(1)
+	minimumOffset := uint32(1)
 	currentWaterMark, ok := pm.ProducerWaterMarks[producerName]
 	if ok {
 		if currentWaterMark > pbs.BlockNum {
 			minimumOffset = currentWaterMark - pbs.BlockNum + 1
 		}
 	}
-	minimumSlot := hbt.Slot + minimumOffset
+	minimumSlot := hbt.Slot + uint64(minimumOffset)
 	minimumSlotProducerIndex := (minimumSlot % (uint64(len(activeProducers)) * chain.PRODUCER_REPETITION)) / chain.PRODUCER_REPETITION
 	producerIndex := uint64(foundIndex)
 	if producerIndex == minimumSlotProducerIndex {
@@ -195,7 +196,7 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 	return "", fmt.Errorf("producer does not exist")
 }
 
-func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) chain.BlockResult {
+func (pm *ProducerManager) startBlock(blockchain database.BlockChain) chain.BlockResult {
 	headBlockState := blockchain.Head
 	now := uint64(time.Now().UnixNano() / int64(time.Millisecond)) //ms
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano() / int64(time.Millisecond)) //ms
@@ -248,7 +249,7 @@ func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) chain.BlockRe
 	return chain.Failed
 }
 
-func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) error {
+func (pm *ProducerManager) produceBlock(blockchain database.BlockChain) error {
 	if pm.PendingBlockMode != Producing {
 		return fmt.Errorf("called produce_block while not actually producing")
 	}
@@ -268,6 +269,7 @@ func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) error {
 	blockchain.CommitBlock()
 	newBs := blockchain.Head
 	pm.ProducerWaterMarks[newBs.Header.Producer] = blockchain.Head.BlockNum
+	return nil
 }
 
 func min(a, b uint16) uint16 {

@@ -1,12 +1,12 @@
-package chain
+package database
 
 import (
-	"blockchain/database"
 	bytes2 "bytes"
 	"log"
 	"fmt"
 	"blockchain/crypto"
 	"crypto/sha256"
+	"blockchain/chain"
 )
 
 type BlockChainConfig struct {
@@ -14,34 +14,47 @@ type BlockChainConfig struct {
 	StateDir string
 	StateSize uint64
 	ReversibleCacheSize uint64
-	Genesis GenesisState
+	Genesis chain.GenesisState
+}
+
+func NewBlockChainConfig() BlockChainConfig {
+	return BlockChainConfig{
+		Genesis: chain.NewGenesisState(),
+	}
 }
 
 type PendingState struct {
-	PendingBlockState *BlockState
-	Actions []ActionReceipt
-	BlockStatus BlockStatus
+	PendingBlockState *chain.BlockState
+	Actions []chain.ActionReceipt
+	BlockStatus chain.BlockStatus
 }
 
 type BlockChain struct {
 	Config BlockChainConfig
-	DB database.Database
-	ReversibleBlocks []*database.ReversibleBlockObject
-	Blog database.BlockLog
+	DB Database
+	ReversibleBlocks []*ReversibleBlockObject
+	Blog BlockLog
 	Pending *PendingState
-	Head *BlockState
-	ForkDatabase database.ForkDatabase
-	Authorization AuthorizationManager
-	ChainId SHA256Type
+	Head *chain.BlockState
+	ForkDatabase ForkDatabase
+	Authorization chain.AuthorizationManager
+	ChainId chain.SHA256Type
 	Replaying bool
-	UnAppliedTransactions map[SHA256Type]*TransactionMetaData
+	UnAppliedTransactions map[chain.SHA256Type]*chain.TransactionMetaData
 }
 
 func NewBlockChain() BlockChain {
 	bc := BlockChain{}
-	if bc.Head == nil {
-
-	}
+	bc.Config = NewBlockChainConfig()
+	bc.initializeForkDatabase()
+	bc.Blog = BlockLog{}
+	bc.Blog.Blocks = []*chain.SignedBlock{bc.Head.Block}
+	bc.Blog.Head = bc.Blog.Blocks[len(bc.Blog.Blocks) - 1]
+	bc.Blog.GenesisWrittenToBlockLog = true
+	bc.Blog.HeadId = bc.Blog.Head.Id()
+	bc.ChainId = bc.Config.Genesis.ComputeChainId()
+	bc.Pending = &PendingState{}
+	bc.Pending.PendingBlockState = &chain.BlockState{}
 	return bc
 }
 
@@ -55,40 +68,43 @@ func max(a, b uint32) uint32 {
 func (bc *BlockChain) initializeForkDatabase() {
 	fmt.Println("Initializing new blockchain with genesis state")
 	pub, _ := crypto.NewPublicKey(bc.Config.Genesis.InitialKey)
-	producerKey := ProducerKey{
-		DEFAULT_PRODUCER_NAME,
+	producerKey := chain.ProducerKey{
+		chain.DEFAULT_PRODUCER_NAME,
 		pub,
 	}
-	initialSchedule := ProducerScheduleType{
+	initialSchedule := chain.ProducerScheduleType{
 		Version: 0,
-		Producers: []ProducerKey{producerKey},
+		Producers: []chain.ProducerKey{producerKey},
 	}
-	genHeader := BlockHeaderState{}
+	genHeader := chain.NewBlockHeaderState()
 	genHeader.ActiveSchedule = initialSchedule
 	genHeader.PendingSchedule = initialSchedule
-	initialScheduleBytes, _ := MarshalBinary(initialSchedule)
+	initialScheduleBytes, _ := chain.MarshalBinary(initialSchedule)
 	genHeader.PendingScheduleHash = sha256.Sum256(initialScheduleBytes)
 	genHeader.Header.Timestamp = bc.Config.Genesis.InitialTimestamp
 	genHeader.Id = genHeader.Header.Id()
-	genHeader.BlockNum = uint64(genHeader.Header.BlockNum())
+	genHeader.BlockNum = genHeader.Header.BlockNum()
+	bc.Head = &chain.BlockState{}
 	bc.Head.BlockHeaderState = genHeader
+	bc.Head.Block = &chain.SignedBlock{}
 	bc.Head.Block.SignedBlockHeader = genHeader.Header
-	bc.ForkDatabase = database.ForkDatabase{}
-	bc.ForkDatabase.BlockStates = []*BlockState{bc.Head}
+	bc.ForkDatabase = ForkDatabase{}
+	bc.ForkDatabase.BlockStates = []*chain.BlockState{bc.Head}
+	bc.initializeDatabase()
 }
 
 func (bc *BlockChain) initializeDatabase() {
-	bc.DB = database.Database{}
-	taposBlockSumary := database.BlockSummaryObject{}
+	bc.DB = Database{}
+	taposBlockSumary := BlockSummaryObject{}
 	taposBlockSumary.BlockId = bc.Head.Id
-	bc.DB.BlockSummaryObjects = []*database.BlockSummaryObject{&taposBlockSumary}
+	bc.DB.BlockSummaryObjects = []*BlockSummaryObject{&taposBlockSumary}
 }
 
 func (bc *BlockChain) LastIrreversibleBlockNum() uint32 {
 	return max(bc.Head.DPOSIrreversibleBlockNum, bc.Head.BFTIrreversibleBlockNum)
 }
 
-func (bc *BlockChain) LastIrreversibleBlockId() *SHA256Type {
+func (bc *BlockChain) LastIrreversibleBlockId() *chain.SHA256Type {
 	libNum := bc.LastIrreversibleBlockNum()
 	taposBlockSummary := bc.DB.GetBlockSummaryObject(libNum)
 	if taposBlockSummary != nil {
@@ -102,7 +118,7 @@ func (bc *BlockChain) LastIrreversibleBlockId() *SHA256Type {
 	return nil
 }
 
-func (bc *BlockChain) GetBlockIdForNum(blockNum uint32) SHA256Type {
+func (bc *BlockChain) GetBlockIdForNum(blockNum uint32) chain.SHA256Type {
 	blockState := bc.ForkDatabase.GetBlockInCurrentChainIdNum(blockNum)
 	if blockState != nil {
 		return blockState.Id
@@ -111,19 +127,20 @@ func (bc *BlockChain) GetBlockIdForNum(blockNum uint32) SHA256Type {
 	return signedBlock.Id()
 }
 
-func (bc *BlockChain) FetchBlockById(id SHA256Type) *SignedBlock {
+func (bc *BlockChain) FetchBlockById(id chain.SHA256Type) *chain.SignedBlock {
 	state := bc.ForkDatabase.GetBlock(id)
 	if state != nil {
 		return state.Block
 	}
-	block := bc.FetchBlockByNum(NumFromId(id))
-	if block != nil && bytes2.Equal(block.Id()[:], id[:]) {
+	block := bc.FetchBlockByNum(chain.NumFromId(id))
+	blockId := block.Id()
+	if block != nil && bytes2.Equal(blockId[:], id[:]) {
 		return block
 	}
 	return nil
 }
 
-func (bc *BlockChain) FetchBlockByNum(num uint32) *SignedBlock {
+func (bc *BlockChain) FetchBlockByNum(num uint32) *chain.SignedBlock {
 	blockState := bc.ForkDatabase.GetBlockInCurrentChainIdNum(num)
 	if blockState != nil {
 		return blockState.Block
@@ -132,7 +149,7 @@ func (bc *BlockChain) FetchBlockByNum(num uint32) *SignedBlock {
 	return signedBlock
 }
 
-func (bc *BlockChain) PendingBlocKState() *BlockState {
+func (bc *BlockChain) PendingBlocKState() *chain.BlockState {
 	if bc.Pending != nil {
 		return bc.Pending.PendingBlockState
 	}
@@ -148,13 +165,13 @@ func (bc *BlockChain) AbortBlock() {
 	}
 }
 
-func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s BlockStatus) {
+func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.BlockStatus) {
 	if bc.Pending == nil {
 		log.Fatal("pending block should be not nil")
 	}
 	// generate pending block
 	bc.Pending.BlockStatus = s
-	bc.Pending.PendingBlockState = NewBlockState(bc.Head.BlockHeaderState, when)
+	bc.Pending.PendingBlockState = chain.NewBlockState(bc.Head.BlockHeaderState, when)
 	bc.Pending.PendingBlockState.InCurrentChain = true
 	bc.Pending.PendingBlockState.SetConfirmed(confirmBlockCount)
 	wasPendingPromoted := bc.Pending.PendingBlockState.MaybePromotePending()
@@ -171,7 +188,7 @@ func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s BlockS
 	bc.ClearExpiredInputTransaction()
 }
 
-func removeTransactionObject(transactionObjects []*database.TransactionObject, index int) []*database.TransactionObject {
+func removeTransactionObject(transactionObjects []*TransactionObject, index int) []*TransactionObject {
 	return append(transactionObjects[:index], transactionObjects[index+1:]...)
 }
 
@@ -198,8 +215,8 @@ func (bc *BlockChain) FinalizeBlock() {
 	bc.CreateBlockSumary(p.Id)
 }
 
-func (bc *BlockChain) CreateBlockSumary(id SHA256Type) {
-	blockNum := NumFromId(id)
+func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
+	blockNum := chain.NumFromId(id)
 	bso := bc.DB.FindBlockSummaryObject(blockNum)
 	bso.BlockId = id
 }
@@ -212,7 +229,7 @@ func (bc *BlockChain) CommitBlock() {
 		log.Fatal("committed block did not become the new head in fork database")
 	}
 	if !bc.Replaying {
-		ubo := database.ReversibleBlockObject{}
+		ubo := ReversibleBlockObject{}
 		ubo.BlockNum = bc.Pending.PendingBlockState.BlockNum
 		ubo.SetBlock(bc.Pending.PendingBlockState.Block)
 	}
@@ -220,7 +237,7 @@ func (bc *BlockChain) CommitBlock() {
 	// TODO
 }
 
-func (bc *BlockChain) SignBlock(signer SignerCallBack) {
+func (bc *BlockChain) SignBlock(signer chain.SignerCallBack) {
 	p := bc.Pending.PendingBlockState
 	p.Sign(signer)
 	p.Block.SignedBlockHeader = p.Header

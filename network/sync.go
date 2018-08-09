@@ -64,7 +64,8 @@ func (sm *SyncManager) setState(newState states) {
 
 func (sm *SyncManager) isActive(c *Connection, node *Node) bool {
 	if c!= nil && sm.state == Head_Catchup {
-		return !bytes.Equal(c.ForkHead[:], chain.SHA256Type{}[:]) && c.ForkHeadNum < node.BlockChain.Head.BlockNum
+		nullId := chain.SHA256Type{}
+		return !bytes.Equal(c.ForkHead[:], nullId[:]) && c.ForkHeadNum < node.BlockChain.Head.BlockNum
 	}
 	return sm.state != In_Sync
 }

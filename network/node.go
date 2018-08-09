@@ -18,6 +18,7 @@ import (
 	"log"
 	"bytes"
 	"blockchain/btcsuite/btcd/btcec"
+	"blockchain/database"
 )
 
 type Connection struct {
@@ -150,7 +151,7 @@ type Node struct {
 	newPacket chan *Packet // trigger when received message packet from a inbound connection
 	SyncManager *SyncManager
 	Dispatcher *DispatchManager
-	BlockChain chain.BlockChain
+	BlockChain database.BlockChain
 	LocalTrxs []NodeTransactionState
 	Producer *ProducerManager
 }
@@ -165,7 +166,7 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		doneConn: make(chan *Connection),
 		newPacket: make(chan *Packet),
 		NetworkVersionMatch: false,
-		BlockChain: chain.NewBlockChain(),
+		BlockChain: database.NewBlockChain(),
 		Producer: NewProducerManager(),
 	}
 }
@@ -173,6 +174,7 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 func (node *Node) Start() {
 	go node.ConnectToPeers()
 	go node.ListenFromPeers()
+	node.Producer.Startup(node)
 }
 
 // Receive message
@@ -246,7 +248,8 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	isEmptySig := bytes.Equal(message.Sig.Content, emptySig)
 	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
 	bytesOfTimestamp, _ := chain.MarshalBinary(message.Time)
-	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], sha256.Sum256(bytesOfTimestamp)[:])))    {
+	hashOfTimestamp := sha256.Sum256(bytesOfTimestamp)
+	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], hashOfTimestamp[:])))    {
 		valid = false
 	}
 	return valid
