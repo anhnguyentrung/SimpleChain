@@ -6,6 +6,7 @@ import (
 	"blockchain/crypto"
 	"sort"
 	"log"
+	"fmt"
 )
 
 type BlockHeader struct {
@@ -109,7 +110,7 @@ func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 	nextBhs := NewBlockHeaderState()
 	newBlockTs := NewBlockTimeStamp()
 	newBlockTs.SetTime(when)
-	newBlockTs.Slot = bhs.Header.Timestamp.Slot + 1
+	//newBlockTs.Slot = bhs.Header.Timestamp.Slot + 1
 	nextBhs.Header.Timestamp = newBlockTs
 	nextBhs.Header.Previous = bhs.Id
 	nextBhs.Header.ScheducerVersion = bhs.ActiveSchedule.Version
@@ -137,6 +138,7 @@ func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 		nextBhs.ConfirmCount = bhs.ConfirmCount[1:]
 		nextBhs.ConfirmCount = append(nextBhs.ConfirmCount, uint8(requiredConfs))
 	}
+	fmt.Println("next block time: ", nextBhs.Header.Timestamp.ToTime().UnixNano())
 	return nextBhs
 }
 

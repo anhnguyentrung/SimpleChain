@@ -34,6 +34,7 @@ func NewProducerManager() *ProducerManager {
 	pm.SignatureProviders = make(map[string]SignatureProviderType, 0)
 	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
 	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
+	pm.ProducerWaterMarks = make(map[chain.AccountName]uint32, 0)
 	return &pm
 }
 
@@ -81,7 +82,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain database.BlockChain
 	defer pm.timer.Stop()
 	if result == chain.Failed {
 		fmt.Println("Failed to start a pending block, will try again later")
-		pm.timer = time.AfterFunc(time.Millisecond * chain.BLOCK_INTERVAL_MS/10, func() {
+		pm.timer = time.AfterFunc(chain.BLOCK_INTERVAL_NS/10, func() {
 			fmt.Println("schedule when failed")
 			pm.scheduleProductionLoop(blockchain)
 		})
@@ -94,7 +95,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain database.BlockChain
 				duration = time.Duration(expiryTime - now)
 			}
 			pm.timer = time.AfterFunc(duration, func() {
-				fmt.Println("produce block")
+				fmt.Println("produce block at ", time.Now().UnixNano())
 				err := pm.produceBlock(blockchain)
 				if err != nil {
 					blockchain.AbortBlock()
@@ -106,7 +107,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain database.BlockChain
 			for _, producer := range pm.Producers {
 				nextProducerBlockTime := pm.calculateNextBlockTime(blockchain, producer) // nanosecond
 				if nextProducerBlockTime != 0 {
-					producerWakeupTime := nextProducerBlockTime - chain.BLOCK_INTERVAL_MS * uint64(time.Millisecond)
+					producerWakeupTime := nextProducerBlockTime - chain.BLOCK_INTERVAL_NS
 					if wakeupTime != 0 {
 						wakeupTime = MinUint64(wakeupTime, producerWakeupTime)
 					} else {
@@ -198,14 +199,13 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 
 func (pm *ProducerManager) startBlock(blockchain database.BlockChain) chain.BlockResult {
 	headBlockState := blockchain.Head
-	now := uint64(time.Now().UnixNano() / int64(time.Millisecond)) //ms
-	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano() / int64(time.Millisecond)) //ms
+	now := uint64(time.Now().UnixNano())
+	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano()) //nanosecond
 	base := max(now, headBlockTime)
-	minTimeToNextBlock := chain.BLOCK_INTERVAL_MS - (base % chain.BLOCK_INTERVAL_MS)
+	minTimeToNextBlock := chain.BLOCK_INTERVAL_NS - (base % chain.BLOCK_INTERVAL_NS)
 	blockTime := base + minTimeToNextBlock
-
-	if (blockTime - minTimeToNextBlock) < (chain.BLOCK_INTERVAL_MS / 10) {
-		blockTime += chain.BLOCK_INTERVAL_MS
+	if (blockTime - minTimeToNextBlock) < (chain.BLOCK_INTERVAL_NS / 10) {
+		blockTime += chain.BLOCK_INTERVAL_NS
 	}
 	pm.PendingBlockMode = Producing
 	blockTs := chain.NewBlockTimeStamp()
@@ -285,6 +285,6 @@ func (pm *ProducerManager) getIrriversibleBlockAge() uint64 {
 	if now.UnixNano() < pm.IrreversibleBlockTime.UnixNano() {
 		return 0
 	} else {
-		return uint64((now.UnixNano() - pm.IrreversibleBlockTime.UnixNano()) / int64(time.Millisecond))
+		return uint64(now.UnixNano() - pm.IrreversibleBlockTime.UnixNano())
 	}
 }

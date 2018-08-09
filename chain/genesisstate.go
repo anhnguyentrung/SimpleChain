@@ -31,7 +31,7 @@ func NewGenesisState() GenesisState {
 		MaxAuthorityDepth:DEFAULT_MAX_AUTH_DEPTH,
 	}
 	initialKey := DEFAULT_PUBLIC_KEY
-	initialTime := time.Date(2018, time.August, 8, 0, 0, 0, 0, time.UTC).UnixNano() / int64(time.Millisecond)
+	initialTime := time.Date(2018, time.August, 8, 0, 0, 0, 0, time.UTC).UnixNano()
 	initialTs := NewBlockTimeStamp()
 	initialTs.SetTime(uint64(initialTime))
 	return GenesisState{

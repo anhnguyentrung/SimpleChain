@@ -95,6 +95,8 @@ func (bc *BlockChain) initializeForkDatabase() {
 
 func (bc *BlockChain) initializeDatabase() {
 	bc.DB = Database{}
+	bc.DB.GPO = &GlobalPropertyBlock{}
+	bc.DB.GPO.Configuation = bc.Config.Genesis.InitialConfiguration
 	taposBlockSumary := BlockSummaryObject{}
 	taposBlockSumary.BlockId = bc.Head.Id
 	bc.DB.BlockSummaryObjects = []*BlockSummaryObject{&taposBlockSumary}
@@ -206,7 +208,7 @@ func (bc *BlockChain) ClearExpiredInputTransaction() {
 }
 
 func (bc *BlockChain) FinalizeBlock() {
-	if bc.Pending != nil {
+	if bc.Pending == nil {
 		log.Fatal("it is not valid to finalize when there is no pending block")
 	}
 	// the part relating to transaction will be added later
