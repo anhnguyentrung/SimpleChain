@@ -119,3 +119,22 @@ func (dm *DispatchManager) receiveTransaction (c *Connection, id chain.SHA256Typ
 		c.LastRequest = nil
 	}
 }
+
+func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) {
+	var skip *Connection = nil
+	for index, org := range dm.ReceivedBlocks {
+		if org.Id == block.Id() {
+			skip = org.Origin
+			dm.ReceivedBlocks = append(dm.ReceivedBlocks[:index], dm.ReceivedBlocks[index+1:]...)
+			break
+		}
+	}
+	msg := Message{
+		Header: MessageHeader{
+			Type:SignedBlock,
+			Length:0,
+		},
+		Content:*block,
+	}
+
+}

@@ -160,9 +160,9 @@ func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.
 	}
 	// generate pending block
 	bc.Pending.BlockStatus = s
-	fmt.Println("old block id: ", bc.Pending.PendingBlockState.BlockNum)
+	//fmt.Println("old block id: ", bc.Pending.PendingBlockState.BlockNum)
 	bc.Pending.PendingBlockState = chain.NewBlockState(bc.Head.BlockHeaderState, when)
-	fmt.Println("next block id: ", bc.Pending.PendingBlockState.BlockNum)
+	//fmt.Println("next block id: ", bc.Pending.PendingBlockState.BlockNum)
 	bc.Pending.PendingBlockState.InCurrentChain = true
 	bc.Pending.PendingBlockState.SetConfirmed(confirmBlockCount)
 	wasPendingPromoted := bc.Pending.PendingBlockState.MaybePromotePending()
@@ -197,7 +197,7 @@ func (bc *BlockChain) ClearExpiredInputTransaction() {
 }
 
 func (bc *BlockChain) FinalizeBlock() {
-	fmt.Println("finalize block")
+	//fmt.Println("finalize block")
 	if bc.Pending == nil {
 		log.Fatal("it is not valid to finalize when there is no pending block")
 	}
@@ -214,7 +214,7 @@ func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
 }
 
 func (bc *BlockChain) CommitBlock() {
-	fmt.Println("commit block")
+	//fmt.Println("commit block")
 	bc.Pending.PendingBlockState.Validated = true
 	newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
 	bc.Head = bc.ForkDatabase.Head

@@ -65,7 +65,7 @@ func (pm *ProducerManager) Startup(node *Node) {
 	if len(pm.Producers) > 0 {
 		fmt.Printf("launching block production for %d producer at %s", len(pm.Producers), time.Now().String())
 	}
-	pm.scheduleProductionLoop(blockchain)
+	pm.scheduleProductionLoop(node)
 }
 
 func maxTime() time.Time {
@@ -76,7 +76,8 @@ func (pm *ProducerManager) onIrreversibleBlock(lib *chain.SignedBlock) {
 	pm.IrreversibleBlockTime = lib.Timestamp.ToTime()
 }
 
-func (pm *ProducerManager) scheduleProductionLoop(blockchain *database.BlockChain) {
+func (pm *ProducerManager) scheduleProductionLoop(node *Node) {
+	blockchain := node.BlockChain
 	pm.timer.Stop()
 	result := pm.startBlock(blockchain)
 	defer pm.timer.Stop()
@@ -84,7 +85,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain *database.BlockChai
 		fmt.Println("Failed to start a pending block, will try again later")
 		pm.timer = time.AfterFunc(chain.BLOCK_INTERVAL_NS/10, func() {
 			fmt.Println("schedule when failed")
-			pm.scheduleProductionLoop(blockchain)
+			pm.scheduleProductionLoop(node)
 		})
 	} else {
 		if pm.PendingBlockMode == Producing {
@@ -96,11 +97,11 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain *database.BlockChai
 			}
 			pm.timer = time.AfterFunc(duration, func() {
 				fmt.Println("produce block at ", time.Now().UnixNano())
-				err := pm.produceBlock(blockchain)
+				err := pm.produceBlock(node)
 				if err != nil {
 					blockchain.AbortBlock()
 				}
-				pm.scheduleProductionLoop(blockchain)
+				pm.scheduleProductionLoop(node)
 			})
 		} else if pm.PendingBlockMode == Speculating && len(pm.Producers) != 0 {
 			wakeupTime := uint64(0)
@@ -122,7 +123,7 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain *database.BlockChai
 				duration := time.Duration(expiryTime - now)
 				pm.timer = time.AfterFunc(duration, func() {
 					fmt.Println("schedule when failed")
-					pm.scheduleProductionLoop(blockchain)
+					pm.scheduleProductionLoop(node)
 				})
 			} else {
 				fmt.Println("Speculative Block Created; Not Scheduling Speculative/Production, no local producers had valid wake up times")
@@ -198,7 +199,7 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 }
 
 func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.BlockResult {
-	fmt.Println("start block")
+	//fmt.Println("start block")
 	headBlockState := blockchain.Head
 	now := uint64(time.Now().UnixNano())
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano()) //nanosecond
@@ -250,7 +251,8 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	return chain.Failed
 }
 
-func (pm *ProducerManager) produceBlock(blockchain *database.BlockChain) error {
+func (pm *ProducerManager) produceBlock(node *Node) error {
+	blockchain := node.BlockChain
 	if pm.PendingBlockMode != Producing {
 		return fmt.Errorf("called produce_block while not actually producing")
 	}

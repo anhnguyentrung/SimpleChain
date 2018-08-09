@@ -892,3 +892,12 @@ func (node *Node) findLocalTrx(id chain.SHA256Type) *NodeTransactionState {
 	}
 	return foundTrx
 }
+
+func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
+	for _, c := range node.Conns {
+		if c == ignoredConnection || !c.Connected {
+			continue
+		}
+		c.sendMessage(message)
+	}
+}
