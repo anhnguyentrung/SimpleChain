@@ -4,6 +4,9 @@ import (
 	"blockchain/database"
 	bytes2 "bytes"
 	"log"
+	"fmt"
+	"blockchain/crypto"
+	"crypto/sha256"
 )
 
 type BlockChainConfig struct {
@@ -35,7 +38,11 @@ type BlockChain struct {
 }
 
 func NewBlockChain() BlockChain {
-	return BlockChain{}
+	bc := BlockChain{}
+	if bc.Head == nil {
+
+	}
+	return bc
 }
 
 func max(a, b uint32) uint32 {
@@ -43,6 +50,38 @@ func max(a, b uint32) uint32 {
 		return a
 	}
 	return b
+}
+
+func (bc *BlockChain) initializeForkDatabase() {
+	fmt.Println("Initializing new blockchain with genesis state")
+	pub, _ := crypto.NewPublicKey(bc.Config.Genesis.InitialKey)
+	producerKey := ProducerKey{
+		DEFAULT_PRODUCER_NAME,
+		pub,
+	}
+	initialSchedule := ProducerScheduleType{
+		Version: 0,
+		Producers: []ProducerKey{producerKey},
+	}
+	genHeader := BlockHeaderState{}
+	genHeader.ActiveSchedule = initialSchedule
+	genHeader.PendingSchedule = initialSchedule
+	initialScheduleBytes, _ := MarshalBinary(initialSchedule)
+	genHeader.PendingScheduleHash = sha256.Sum256(initialScheduleBytes)
+	genHeader.Header.Timestamp = bc.Config.Genesis.InitialTimestamp
+	genHeader.Id = genHeader.Header.Id()
+	genHeader.BlockNum = uint64(genHeader.Header.BlockNum())
+	bc.Head.BlockHeaderState = genHeader
+	bc.Head.Block.SignedBlockHeader = genHeader.Header
+	bc.ForkDatabase = database.ForkDatabase{}
+	bc.ForkDatabase.BlockStates = []*BlockState{bc.Head}
+}
+
+func (bc *BlockChain) initializeDatabase() {
+	bc.DB = database.Database{}
+	taposBlockSumary := database.BlockSummaryObject{}
+	taposBlockSumary.BlockId = bc.Head.Id
+	bc.DB.BlockSummaryObjects = []*database.BlockSummaryObject{&taposBlockSumary}
 }
 
 func (bc *BlockChain) LastIrreversibleBlockNum() uint32 {

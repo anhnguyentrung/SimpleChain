@@ -1,7 +1,6 @@
 package chain
 
 import (
-	"time"
 	"crypto/sha256"
 )
 
@@ -17,8 +16,8 @@ type ChainConfig struct {
 type GenesisState struct {
 	RootKey string
 	InitialConfiguration ChainConfig
-	InitialTimestamp time.Time
-	InitialKey SHA256Type
+	InitialTimestamp BlockTimeStamp
+	InitialKey string
 }
 
 func NewGenesisState() GenesisState {

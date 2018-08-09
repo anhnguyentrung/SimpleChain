@@ -166,6 +166,7 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		newPacket: make(chan *Packet),
 		NetworkVersionMatch: false,
 		BlockChain: chain.NewBlockChain(),
+		Producer: NewProducerManager(),
 	}
 }
 

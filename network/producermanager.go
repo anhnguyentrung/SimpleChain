@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math"
 	"bytes"
-	"log"
 )
 
 type PendingBlockMode uint8
@@ -29,12 +28,12 @@ type ProducerManager struct {
 	timer *time.Timer
 }
 
-func NewProducerManager() ProducerManager {
+func NewProducerManager() *ProducerManager {
 	pm := ProducerManager{}
-	pm.Producers = []chain.AccountName{"default"}
+	pm.Producers = []chain.AccountName{chain.DEFAULT_PRODUCER_NAME}
 	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
 	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
-	return pm
+	return &pm
 }
 
 func makeKeySignatureProvider(wif string) SignatureProviderType {
@@ -94,7 +93,11 @@ func (pm *ProducerManager) scheduleProductionLoop(blockchain chain.BlockChain) {
 				duration = time.Duration(expiryTime - now)
 			}
 			pm.timer = time.AfterFunc(duration, func() {
-				fmt.Println("schedule when failed")
+				fmt.Println("produce block")
+				err := pm.produceBlock(blockchain)
+				if err != nil {
+					blockchain.AbortBlock()
+				}
 				pm.scheduleProductionLoop(blockchain)
 			})
 		} else if pm.PendingBlockMode == Speculating && len(pm.Producers) != 0 {
@@ -245,17 +248,17 @@ func (pm *ProducerManager) startBlock(blockchain chain.BlockChain) chain.BlockRe
 	return chain.Failed
 }
 
-func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) {
+func (pm *ProducerManager) produceBlock(blockchain chain.BlockChain) error {
 	if pm.PendingBlockMode != Producing {
-		log.Fatal("called produce_block while not actually producing")
+		return fmt.Errorf("called produce_block while not actually producing")
 	}
 	pbs := blockchain.PendingBlocKState()
 	if pbs == nil {
-		log.Fatal("pending_block_state does not exist but it should, another plugin may have corrupted it")
+		return fmt.Errorf("pending_block_state does not exist but it should, another plugin may have corrupted it")
 	}
 	signatureProvider, hasSP := pm.SignatureProviders[pbs.BlockSigningKey.String()]
 	if !hasSP {
-		log.Fatal("Attempting to produce a block for which we don't have the private key")
+		return fmt.Errorf("Attempting to produce a block for which we don't have the private key")
 	}
 	blockchain.FinalizeBlock()
 	signer := func(digest chain.SHA256Type) crypto.Signature {
