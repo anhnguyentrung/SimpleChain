@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"blockchain/btcsuite/btcd/btcec"
 	"blockchain/database"
-	"encoding/hex"
 )
 
 type Connection struct {
@@ -233,21 +232,19 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	case SyncRequestMessage:
 		node.handleSyncRequest(c, msg)
 	case chain.SignedBlock:
+		node.handleSignedBlock(c, msg)
 	case chain.PackedTransaction:
 	}
 }
 
 func isValidHandshakeMessage(message HandshakeMessage) bool {
 	valid := true
-	fmt.Println("checked block num")
 	if message.LastIrreversibleBlockNum > message.HeadNum {
 		valid = false
 	}
-	fmt.Println("checked p2p address")
 	if message.P2PAddress == "" {
 		valid = false
 	}
-	fmt.Println("checked os")
 	if message.OS == "" {
 		valid = false
 	}
@@ -257,9 +254,6 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
 	bytesOfTimestamp, _ := marshalBinary(message.Time)
 	hashOfTimestamp := sha256.Sum256(bytesOfTimestamp)
-	fmt.Println("checked sig", isEmptySig)
-	fmt.Println("checked hash", isEmptyHash)
-	fmt.Println("checked token", bytes.Equal(message.Token[:], hashOfTimestamp[:]))
 	fmt.Println("receive time ", message.Time.UnixNano())
 	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], hashOfTimestamp[:])))    {
 		valid = false
@@ -278,7 +272,7 @@ func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage
 	fmt.Println("received handshake message", message.ChainId)
 	if !isValidHandshakeMessage(message) {
 		fmt.Println("bad handshake message")
-		//c.sendGoAwayMessage(Fatal_Other)
+		c.sendGoAwayMessage(Fatal_Other)
 		return
 	}
 	//libNum := node.BlockChain.LastIrreversibleBlockNum()
@@ -346,8 +340,8 @@ func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage
 	//
 	//	}
 	//}
-	//c.LastHandshakeReceived = message
-	//node.SyncManager.ReceiveHanshake(message, c, node)
+	c.LastHandshakeReceived = message
+	node.SyncManager.ReceiveHanshake(message, c, node)
 }
 
 func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
@@ -457,12 +451,13 @@ func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
 }
 
 func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock) {
-	blockchain := node.BlockChain
-	blockId := signedBlock.Id()
+	//blockchain := node.BlockChain
+	//blockId := signedBlock.Id()
 	blockNum := signedBlock.BlockNum()
-	if blockchain.FetchBlockById(blockId) != nil {
-		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
-	}
+	fmt.Println("receive block ", blockNum)
+	//if blockchain.FetchBlockById(blockId) != nil {
+	//	node.SyncManager.receiveBlock(c, node, blockId, blockNum)
+	//}
 }
 
 func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
@@ -719,7 +714,7 @@ func (node *Node) addConnection(c *Connection) {
 		node.addNewInbound(c)
 	} else {
 		node.addNewOutbound(c)
-		node.sendHandshake(c)
+		//node.sendHandshake(c)
 	}
 	c.Connected = true
 }
@@ -910,6 +905,6 @@ func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
 }
 
 func (node *Node) acceptedBlock(block *chain.BlockState) {
-	fmt.Println("accepted block id ", hex.EncodeToString(block.Id[:]))
+	fmt.Println("accepted block ", block.BlockNum)
 	node.Dispatcher.broadcastBlock(block.Block, node)
 }

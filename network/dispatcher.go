@@ -130,13 +130,12 @@ func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) 
 			break
 		}
 	}
-	content, _ := marshalBinary(*block)
 	msg := Message{
 		Header: MessageHeader{
 			Type:SignedBlock,
 			Length:0,
 		},
-		Content: content,
+		Content: *block,
 	}
 	node.sendAll(skip, msg)
 }
