@@ -99,12 +99,13 @@ func (dm *DispatchManager) receiveNotice(c *Connection, node *Node, message Noti
 		return
 	}
 	if sendReq {
+		content, _ := marshalBinary(req)
 		msg := Message{
 			Header: MessageHeader{
 				Type:Request,
 				Length:0,
 			},
-			Content:req,
+			Content: content,
 		}
 		c.sendMessage(msg)
 		c.LastRequest = &req
@@ -129,12 +130,13 @@ func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) 
 			break
 		}
 	}
+	content, _ := marshalBinary(*block)
 	msg := Message{
 		Header: MessageHeader{
 			Type:SignedBlock,
 			Length:0,
 		},
-		Content:*block,
+		Content: content,
 	}
 	node.sendAll(skip, msg)
 }

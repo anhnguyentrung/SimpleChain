@@ -131,12 +131,13 @@ func (sm *SyncManager) requestSyncBlocks(c *Connection, start, end uint32) {
 		StartBlock: start,
 		EndBlock: end,
 	}
+	content, _ := marshalBinary(syncMessage)
 	msg := Message{
 		Header: MessageHeader{
 			Type:SyncRequest,
 			Length:0,
 		},
-		Content:syncMessage,
+		Content: content,
 	}
 	c.sendMessage(msg)
 }
@@ -194,12 +195,13 @@ func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id c
 		c.ForkHeadNum = 0
 	}
 	req.ReqTrx.Mode = None
+	content, _ := marshalBinary(req)
 	msg := Message{
 		Header: MessageHeader{
 			Type:Request,
 			Length:0,
 		},
-		Content:req,
+		Content: content,
 	}
 	c.sendMessage(msg)
 }
@@ -216,12 +218,13 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 		noticeMsg.KnownBlocks.Mode = None
 		noticeMsg.KnownTrx.Mode = Catch_Up
 		noticeMsg.KnownTrx.Pending = uint32(len(node.LocalTrxs))
+		content, _ := marshalBinary(noticeMsg)
 		msg := Message{
 			Header: MessageHeader{
 				Type:Notice,
 				Length:0,
 			},
-			Content:noticeMsg,
+			Content: content,
 		}
 		c.sendMessage(msg)
 		return
@@ -237,12 +240,13 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 			noticeMsg.KnownTrx.Mode = Last_Irr_Catch_Up
 			noticeMsg.KnownTrx.Pending = libNum
 			noticeMsg.KnownBlocks.Pending = head
+			content, _ := marshalBinary(noticeMsg)
 			msg := Message{
 				Header: MessageHeader{
 					Type:Notice,
 					Length:0,
 				},
-				Content:noticeMsg,
+				Content: content,
 			}
 			c.sendMessage(msg)
 			return
@@ -258,12 +262,13 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 			noticeMsg.KnownBlocks.Mode = Catch_Up
 			noticeMsg.KnownBlocks.Pending = head
 			noticeMsg.KnownTrx.Ids = append(noticeMsg.KnownTrx.Ids, headId)
+			content, _ := marshalBinary(noticeMsg)
 			msg := Message{
 				Header: MessageHeader{
 					Type:Notice,
 					Length:0,
 				},
-				Content:noticeMsg,
+				Content: content,
 			}
 			c.sendMessage(msg)
 			return

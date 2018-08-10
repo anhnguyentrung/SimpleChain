@@ -223,6 +223,7 @@ func (e *Encoder) writeSignature(sig crypto.Signature) error {
 
 func (e *Encoder) writeTimestamp(t time.Time) error {
 	n := uint64(t.UnixNano())
+	//fmt.Println("encode pos ", e.Count)
 	return e.WriteUint64(n)
 }
 

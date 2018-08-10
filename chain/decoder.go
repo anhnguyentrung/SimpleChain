@@ -330,6 +330,7 @@ func (d *Decoder) readPublicKey() (out crypto.PublicKey, err error) {
 	out = crypto.PublicKey{
 		Content: d.Data[d.Pos : d.Pos+TypeSize.PublicKey], // 33 bytes
 	}
+	d.Pos += TypeSize.PublicKey
 	return
 }
 
@@ -341,6 +342,7 @@ func (d *Decoder) ReadSignature() (out crypto.Signature, err error) {
 	out = crypto.Signature{
 		Content: d.Data[d.Pos : d.Pos+TypeSize.Signature], 	// 65 bytes
 	}
+	d.Pos += TypeSize.Signature
 	return
 }
 

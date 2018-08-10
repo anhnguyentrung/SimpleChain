@@ -87,12 +87,13 @@ func (c *Connection) sendMessage(message Message) error {
 
 func (c *Connection) sendGoAwayMessage(reason GoAwayReason) error {
 	goAwayMsg := NewGoAwayMessage(reason)
+	content, _ := marshalBinary(goAwayMsg)
 	msg := Message{
 		Header: MessageHeader{
 			Type:Handshake,
 			Length:0,
 		},
-		Content:goAwayMsg,
+		Content: content,
 	}
 	return c.sendMessage(msg)
 }
@@ -169,6 +170,7 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		BlockChain: database.NewBlockChain(),
 		Producer: NewProducerManager(),
 		Dispatcher: &DispatchManager{},
+		UserAgentName: "",
 	}
 }
 
@@ -231,7 +233,6 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	case SyncRequestMessage:
 		node.handleSyncRequest(c, msg)
 	case chain.SignedBlock:
-		node.handleSignedBlock(c, msg)
 	case chain.PackedTransaction:
 	}
 }
@@ -259,6 +260,7 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	fmt.Println("checked sig", isEmptySig)
 	fmt.Println("checked hash", isEmptyHash)
 	fmt.Println("checked token", bytes.Equal(message.Token[:], hashOfTimestamp[:]))
+	fmt.Println("receive time ", message.Time.UnixNano())
 	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], hashOfTimestamp[:])))    {
 		valid = false
 	}
@@ -385,12 +387,13 @@ func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
 		break
 	}
 	if sendReq {
+		content, _ := marshalBinary(req)
 		msg := Message{
 			Header: MessageHeader{
 				Type:Request,
 				Length:0,
 			},
-			Content:req,
+			Content:content,
 		}
 		c.sendMessage(msg)
 	}
@@ -440,12 +443,13 @@ func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
 		}
 		block := blockchain.FetchBlockByNum(num)
 		if block != nil && triggerSend {
+			content, _ := marshalBinary(*block)
 			msg := Message{
 				Header: MessageHeader{
 					Type:SignedBlock,
 					Length:0,
 				},
-				Content:*block,
+				Content: content,
 			}
 			c.sendMessage(msg)
 		}
@@ -845,15 +849,15 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 		}
 	}
 	currentTime := time.Now()
-	timestamp := currentTime.UnixNano()
-	bytesOfTimestamp, _ := marshalBinary(timestamp)
+	fmt.Println("send time ", currentTime.UnixNano())
+	bytesOfTimestamp, _ := marshalBinary(currentTime)
 	token := sha256.Sum256(bytesOfTimestamp)
 	return HandshakeMessage{
 		NetworkVersion: node.NetworkVersion,
 		ChainId: node.ChainId,
 		NodeId: node.NodeId,
 		Key: publicKey,
-		Time: time.Now(),
+		Time: currentTime,
 		Token: token,
 		Sig: node.SignCompact(publicKey, token),
 		P2PAddress: node.P2PAddress,
