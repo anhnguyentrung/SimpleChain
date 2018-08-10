@@ -12,7 +12,6 @@ import (
 	"time"
 	"crypto/sha256"
 	"runtime"
-	"io/ioutil"
 	"os"
 	"encoding/binary"
 	"log"
@@ -75,13 +74,13 @@ func (c *Connection) Current() bool {
 }
 
 func (c *Connection) sendMessage(message Message) error {
-	buf, err := chain.MarshalBinary(message.Content)
+	buf, err := marshalBinary(message.Content)
 	if err != nil {
 		fmt.Println("Encode content: ", err)
 		return err
 	}
 	message.Header.Length = uint32(len(buf))
-	data, err := chain.MarshalBinary(message)
+	data, err := marshalBinary(message)
 	c.Conn.Write(data)
 	return err
 }
@@ -90,7 +89,7 @@ func (c *Connection) sendGoAwayMessage(reason GoAwayReason) error {
 	goAwayMsg := NewGoAwayMessage(reason)
 	msg := Message{
 		Header: MessageHeader{
-			Type:byte(Handshake),
+			Type:Handshake,
 			Length:0,
 		},
 		Content:goAwayMsg,
@@ -239,12 +238,15 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 
 func isValidHandshakeMessage(message HandshakeMessage) bool {
 	valid := true
+	fmt.Println("checked block num")
 	if message.LastIrreversibleBlockNum > message.HeadNum {
 		valid = false
 	}
+	fmt.Println("checked p2p address")
 	if message.P2PAddress == "" {
 		valid = false
 	}
+	fmt.Println("checked os")
 	if message.OS == "" {
 		valid = false
 	}
@@ -252,8 +254,11 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	emptyHash := sha256.Sum256([]byte(""))
 	isEmptySig := bytes.Equal(message.Sig.Content, emptySig)
 	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
-	bytesOfTimestamp, _ := chain.MarshalBinary(message.Time)
+	bytesOfTimestamp, _ := marshalBinary(message.Time)
 	hashOfTimestamp := sha256.Sum256(bytesOfTimestamp)
+	fmt.Println("checked sig", isEmptySig)
+	fmt.Println("checked hash", isEmptyHash)
+	fmt.Println("checked token", bytes.Equal(message.Token[:], hashOfTimestamp[:]))
 	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], hashOfTimestamp[:])))    {
 		valid = false
 	}
@@ -271,76 +276,76 @@ func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage
 	fmt.Println("received handshake message", message.ChainId)
 	if !isValidHandshakeMessage(message) {
 		fmt.Println("bad handshake message")
-		c.sendGoAwayMessage(Fatal_Other)
+		//c.sendGoAwayMessage(Fatal_Other)
 		return
 	}
-	libNum := node.BlockChain.LastIrreversibleBlockNum()
-	peerLib := message.LastIrreversibleBlockNum
-	if !c.Connected {
-		c.Connected = true
-	}
-	if message.Generation == 1 {
-		if message.NodeId == node.NodeId {
-			c.sendGoAwayMessage(Self)
-			return
-		}
-		if c.PeerAddress == "" || c.LastHandshakeReceived.NodeId == sha256.Sum256([]byte("")) {
-			fmt.Println("checking for duplicate")
-			for _, check := range node.Conns {
-				if check == c {
-					continue
-				}
-				if check.Connected && check.PeerAddress == message.P2PAddress {
-					if message.Time.UnixNano() + c.LastHandshakeSent.Time.UnixNano()  <= check.LastHandshakeSent.Time.UnixNano() + check.LastHandshakeReceived.Time.UnixNano() {
-						continue
-					}
-					c.sendGoAwayMessage(Duplicate)
-					return
-				}
-			}
-		} else {
-			fmt.Println("skipping duplicate check")
-		}
-		if message.ChainId != node.ChainId {
-			fmt.Println("Peer on a different chain. Closing connection")
-			c.sendGoAwayMessage(Wrong_Chain)
-			return
-		}
-		c.NetworkVersion = message.NetworkVersion
-		if c.NetworkVersion != node.NetworkVersion {
-			if node.NetworkVersionMatch {
-				fmt.Println("Peer network version does not match")
-				c.sendGoAwayMessage(Wrong_Version)
-				return
-			} else {
-				fmt.Printf("Local network version %d, remote network version %d\n", node.NetworkVersion, c.NetworkVersion)
-
-			}
-		}
-		if c.NodeId !=  message.NodeId {
-			c.NodeId = message.NodeId
-		}
-		if !node.authenticatePeer(message) {
-			fmt.Println("Peer not authenticated")
-			c.sendGoAwayMessage(Authentication)
-			return
-		}
-		onFork := false
-		if peerLib <= libNum && peerLib > 0 {
-			peerLibId := node.BlockChain.GetBlockIdForNum(peerLib)
-			onFork = (message.LastIrreversibleBlockId != peerLibId)
-			if onFork {
-				c.sendGoAwayMessage(Forked)
-				return
-			}
-		}
-		if c.SendHandshakeCount == 0 {
-			node.sendHandshake(c)
-
-		}
-	}
-	c.LastHandshakeReceived = message
-	node.SyncManager.ReceiveHanshake(message, c, node)
+	//libNum := node.BlockChain.LastIrreversibleBlockNum()
+	//peerLib := message.LastIrreversibleBlockNum
+	//if !c.Connected {
+	//	c.Connected = true
+	//}
+	//if message.Generation == 1 {
+	//	if message.NodeId == node.NodeId {
+	//		c.sendGoAwayMessage(Self)
+	//		return
+	//	}
+	//	if c.PeerAddress == "" || c.LastHandshakeReceived.NodeId == sha256.Sum256([]byte("")) {
+	//		fmt.Println("checking for duplicate")
+	//		for _, check := range node.Conns {
+	//			if check == c {
+	//				continue
+	//			}
+	//			if check.Connected && check.PeerAddress == message.P2PAddress {
+	//				if message.Time.UnixNano() + c.LastHandshakeSent.Time.UnixNano()  <= check.LastHandshakeSent.Time.UnixNano() + check.LastHandshakeReceived.Time.UnixNano() {
+	//					continue
+	//				}
+	//				c.sendGoAwayMessage(Duplicate)
+	//				return
+	//			}
+	//		}
+	//	} else {
+	//		fmt.Println("skipping duplicate check")
+	//	}
+	//	if message.ChainId != node.ChainId {
+	//		fmt.Println("Peer on a different chain. Closing connection")
+	//		c.sendGoAwayMessage(Wrong_Chain)
+	//		return
+	//	}
+	//	c.NetworkVersion = message.NetworkVersion
+	//	if c.NetworkVersion != node.NetworkVersion {
+	//		if node.NetworkVersionMatch {
+	//			fmt.Println("Peer network version does not match")
+	//			c.sendGoAwayMessage(Wrong_Version)
+	//			return
+	//		} else {
+	//			fmt.Printf("Local network version %d, remote network version %d\n", node.NetworkVersion, c.NetworkVersion)
+	//
+	//		}
+	//	}
+	//	if c.NodeId !=  message.NodeId {
+	//		c.NodeId = message.NodeId
+	//	}
+	//	if !node.authenticatePeer(message) {
+	//		fmt.Println("Peer not authenticated")
+	//		c.sendGoAwayMessage(Authentication)
+	//		return
+	//	}
+	//	onFork := false
+	//	if peerLib <= libNum && peerLib > 0 {
+	//		peerLibId := node.BlockChain.GetBlockIdForNum(peerLib)
+	//		onFork = (message.LastIrreversibleBlockId != peerLibId)
+	//		if onFork {
+	//			c.sendGoAwayMessage(Forked)
+	//			return
+	//		}
+	//	}
+	//	if c.SendHandshakeCount == 0 {
+	//		node.sendHandshake(c)
+	//
+	//	}
+	//}
+	//c.LastHandshakeReceived = message
+	//node.SyncManager.ReceiveHanshake(message, c, node)
 }
 
 func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
@@ -382,7 +387,7 @@ func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
 	if sendReq {
 		msg := Message{
 			Header: MessageHeader{
-				Type:byte(Request),
+				Type:Request,
 				Length:0,
 			},
 			Content:req,
@@ -437,7 +442,7 @@ func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
 		if block != nil && triggerSend {
 			msg := Message{
 				Header: MessageHeader{
-					Type:byte(SignedBlock),
+					Type:SignedBlock,
 					Length:0,
 				},
 				Content:*block,
@@ -469,7 +474,7 @@ func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) 
 			if !found {
 				msg := Message{
 					Header: MessageHeader{
-						Type:byte(PackedTransaction),
+						Type:PackedTransaction,
 						Length:0,
 					},
 					Content:tx.PackedTrx,
@@ -486,7 +491,7 @@ func (node *Node) transactionSend(c *Connection, ids []chain.SHA256Type) {
 		if tx != nil {
 			msg := Message{
 				Header: MessageHeader{
-					Type:byte(PackedTransaction),
+					Type:PackedTransaction,
 					Length:0,
 				},
 				Content:tx.PackedTrx,
@@ -505,7 +510,7 @@ func (node *Node) blockSend(c *Connection, ids []chain.SHA256Type) {
 		if block != nil {
 			msg := Message{
 				Header: MessageHeader{
-					Type:byte(SignedBlock),
+					Type:SignedBlock,
 					Length:0,
 				},
 				Content:*block,
@@ -526,7 +531,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 	if headNum == 0 {
 		msg := Message{
 			Header: MessageHeader{
-				Type:byte(Notice),
+				Type:Notice,
 				Length:0,
 			},
 			Content:noticeMsg,
@@ -540,7 +545,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 		fmt.Println("unable to retrieve block data")
 		msg := Message{
 			Header: MessageHeader{
-				Type:byte(Notice),
+				Type:Notice,
 				Length:0,
 			},
 			Content:noticeMsg,
@@ -565,7 +570,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 			for len(bStack) > 0 {
 				msg := Message{
 					Header: MessageHeader{
-						Type:byte(SignedBlock),
+						Type:SignedBlock,
 						Length:0,
 					},
 					Content:*bStack[len(bStack)-1],
@@ -605,7 +610,7 @@ func (node *Node) authenticatePeer(message HandshakeMessage) bool {
 	isEmptySig := bytes.Equal(message.Sig.Content, emptySig)
 	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
 	if !isEmptySig && !isEmptyHash {
-		bytesOfTimestamp, _ := chain.MarshalBinary(message.Time)
+		bytesOfTimestamp, _ := marshalBinary(message.Time)
 		hash := sha256.Sum256(bytesOfTimestamp)
 		if !bytes.Equal(hash[:], message.Token[:]) {
 			fmt.Println("invalid token")
@@ -756,7 +761,7 @@ func (node *Node) handleConnection(c *Connection) {
 			fmt.Println("Type ", err)
 			break
 		}
-		msgType := typeBuf[0]
+		msgType := MessageTypes(typeBuf[0])
 		lenBuf := make([]byte, 4, 4)
 		_, err = io.ReadFull(r, lenBuf)
 		if err != nil {
@@ -777,64 +782,48 @@ func (node *Node) handleConnection(c *Connection) {
 				Length:length,
 			},
 		}
-		switch MessageTypes(msgType) {
+		switch msgType {
 		case Handshake:
 			var msgContent HandshakeMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content = msgContent
 		case ChainSize:
 			var msgContent ChainSizeMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case GoAway:
 			var msgContent GoAwayMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case Time:
 			var msgContent TimeMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case Notice:
 			var msgContent NoticeMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case Request:
 			var msgContent RequestMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case SyncRequest:
 			var msgContent SyncRequestMessage
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case SignedBlock:
 			var msgContent chain.SignedBlock
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		case PackedTransaction:
 			var msgContent chain.PackedTransaction
-			decoder := chain.NewDecoder(msgData)
-			err = decoder.Decode(&msgContent)
+			err = unmarshalBinary(msgData, &msgContent)
 			msg.Content= msgContent
 		}
 		packet := &Packet{connection: c, message: msg}
 		node.newPacket <- packet
 	}
 	node.doneConn <- c
-}
-
-func decodeMessageData(r io.Reader) (message Message, err error) {
-	data, err := ioutil.ReadAll(r)
-	decoder := chain.NewDecoder(data)
-	err = decoder.Decode(&message)
-	return
 }
 
 func (node *Node) SignCompact(signer crypto.PublicKey, digest chain.SHA256Type) crypto.Signature {
@@ -857,7 +846,7 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 	}
 	currentTime := time.Now()
 	timestamp := currentTime.UnixNano()
-	bytesOfTimestamp, _ := chain.MarshalBinary(timestamp)
+	bytesOfTimestamp, _ := marshalBinary(timestamp)
 	token := sha256.Sum256(bytesOfTimestamp)
 	return HandshakeMessage{
 		NetworkVersion: node.NetworkVersion,
@@ -883,15 +872,15 @@ func (node *Node) sendHandshake(c *Connection) (err error) {
 	c.LastHandshakeSent = handshakeMsg
 	msg := Message{
 		Header: MessageHeader{
-			Type:byte(Handshake),
+			Type:Handshake,
 			Length:0,
 		},
 		Content:handshakeMsg,
 	}
-	fmt.Println("sending handshake to ", c.RemoteAddr().String())
+	fmt.Println("sending handshake ", handshakeMsg.LastIrreversibleBlockNum, handshakeMsg.HeadNum)
 	err = c.sendMessage(msg)
 	if err != nil {
-		fmt.Println("error occurred when sending message")
+		fmt.Println("error occurred when sending message ", err)
 	}
 	return
 }

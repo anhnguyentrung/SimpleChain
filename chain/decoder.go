@@ -40,13 +40,15 @@ var TypeSize = struct {
 }
 
 type Decoder struct {
-	data               []byte
-	pos                int
+	Data []byte
+	Pos int
+	Extension func(v interface{}) error
 }
 
 func NewDecoder(data []byte) *Decoder {
 	return &Decoder{
-		data:               data,
+		Data: data,
+		Extension: nil,
 	}
 }
 
@@ -75,7 +77,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		}
 		rv.SetString(s)
 		return
-	case *Name, *AccountName, *PermissionName, *ActionName, *TableName, *ScopeName:
+	case *Name, *AccountName, *PermissionName:
 		var n uint64
 		n, err = d.readUint64()
 		name := NameToString(n)
@@ -84,7 +86,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 	case *byte:
 		//fmt.Println("*byte")
 		var n byte
-		n, err = d.readByte()
+		n, err = d.ReadByte()
 		rv.SetUint(uint64(n))
 		return
 	case *int16:
@@ -94,7 +96,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		return
 	case *uint16:
 		var n uint16
-		n, err = d.readUint16()
+		n, err = d.ReadUint16()
 		rv.SetUint(uint64(n))
 		return
 	case *uint32:
@@ -109,12 +111,12 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		return
 	case *bool:
 		var r bool
-		r, err = d.readBool()
+		r, err = d.ReadBool()
 		rv.SetBool(r)
 		return
 	case *[]byte:
 		var data []byte
-		data, err = d.readByteArray()
+		data, err = d.ReadByteArray()
 		rv.SetBytes(data)
 		return
 	case *SHA256Type:
@@ -129,12 +131,12 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		return
 	case *crypto.Signature:
 		var s crypto.Signature
-		s, err = d.readSignature()
+		s, err = d.ReadSignature()
 		rv.Set(reflect.ValueOf(s))
 		return
 	case *time.Time:
 		var ts time.Time
-		ts, err = d.readTimestamp()
+		ts, err = d.ReadTimestamp()
 		rv.Set(reflect.ValueOf(ts))
 		return
 	}
@@ -149,7 +151,7 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 		return
 	case reflect.Slice:
 		var l uint64
-		if l, err = d.readUvarint(); err != nil {
+		if l, err = d.ReadUvarint(); err != nil {
 			return
 		}
 		rv.Set(reflect.MakeSlice(t, int(l), int(l)))
@@ -159,13 +161,13 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 			}
 		}
 	case reflect.Struct:
-		err = d.decodeStruct(v, t, rv)
+		err = d.DecodeStruct(v, t, rv)
 		if err != nil {
 			return
 		}
 	case reflect.Map:
 		var l uint64
-		if l, err = d.readUvarint(); err != nil {
+		if l, err = d.ReadUvarint(); err != nil {
 			return
 		}
 		kt := t.Key()
@@ -183,13 +185,16 @@ func (d *Decoder) Decode(v interface{}) (err error) {
 			rv.SetMapIndex(kv, vv)
 		}
 	default:
-		return errors.New("decode, unsupported type " + t.String())
+		if d.Extension != nil {
+			return d.Extension(v)
+		}
+		return errors.New("Can not decode value of type " + t.String())
 	}
 
 	return
 }
 
-func (d *Decoder) decodeStruct(v interface{}, t reflect.Type, rv reflect.Value) (err error) {
+func (d *Decoder) DecodeStruct(v interface{}, t reflect.Type, rv reflect.Value) (err error) {
 	l := rv.NumField()
 	for i := 0; i < l; i++ {
 		if tag := t.Field(i).Tag.Get("eos"); tag == "-" {
@@ -207,44 +212,44 @@ func (d *Decoder) decodeStruct(v interface{}, t reflect.Type, rv reflect.Value) 
 
 var ErrVarIntBufferSize = errors.New("varint: invalid buffer size")
 
-func (d *Decoder) readUvarint() (uint64, error) {
-	l, read := binary.Uvarint(d.data[d.pos:])
+func (d *Decoder) ReadUvarint() (uint64, error) {
+	l, read := binary.Uvarint(d.Data[d.Pos:])
 	if read <= 0 {
 		return l, ErrVarIntBufferSize
 	}
-	d.pos += read
+	d.Pos += read
 	return l, nil
 }
 
-func (d *Decoder) readByteArray() (out []byte, err error) {
-	l, err := d.readUvarint()
+func (d *Decoder) ReadByteArray() (out []byte, err error) {
+	l, err := d.ReadUvarint()
 	if err != nil {
 		return nil, err
 	}
-	if len(d.data) < d.pos+int(l) {
-		return nil, fmt.Errorf("byte array: varlen=%d, missing %d bytes", l, d.pos+int(l)-len(d.data))
+	if len(d.Data) < d.Pos+int(l) {
+		return nil, fmt.Errorf("byte array: varlen=%d, missing %d bytes", l, d.Pos+int(l)-len(d.Data))
 	}
-	out = d.data[d.pos : d.pos+int(l)]
-	d.pos += int(l)
+	out = d.Data[d.Pos : d.Pos+int(l)]
+	d.Pos += int(l)
 	return
 }
 
-func (d *Decoder) readByte() (out byte, err error) {
-	if d.remaining() < TypeSize.Byte {
-		err = fmt.Errorf("byte required [1] byte, remaining [%d]", d.remaining())
+func (d *Decoder) ReadByte() (out byte, err error) {
+	if d.Remaining() < TypeSize.Byte {
+		err = fmt.Errorf("byte required [1] byte, remaining [%d]", d.Remaining())
 		return
 	}
-	out = d.data[d.pos]
-	d.pos++
+	out = d.Data[d.Pos]
+	d.Pos++
 	return
 }
 
-func (d *Decoder) readBool() (out bool, err error) {
-	if d.remaining() < TypeSize.Bool {
-		err = fmt.Errorf("bool required [%d] byte, remaining [%d]", TypeSize.Bool, d.remaining())
+func (d *Decoder) ReadBool() (out bool, err error) {
+	if d.Remaining() < TypeSize.Bool {
+		err = fmt.Errorf("bool required [%d] byte, remaining [%d]", TypeSize.Bool, d.Remaining())
 		return
 	}
-	b, err := d.readByte()
+	b, err := d.ReadByte()
 	if err != nil {
 		err = fmt.Errorf("readBool, %s", err)
 	}
@@ -253,19 +258,19 @@ func (d *Decoder) readBool() (out bool, err error) {
 
 }
 
-func (d *Decoder) readUint16() (out uint16, err error) {
-	if d.remaining() < TypeSize.UInt16 {
-		err = fmt.Errorf("uint16 required [%d] bytes, remaining [%d]", TypeSize.UInt16, d.remaining())
+func (d *Decoder) ReadUint16() (out uint16, err error) {
+	if d.Remaining() < TypeSize.UInt16 {
+		err = fmt.Errorf("uint16 required [%d] bytes, remaining [%d]", TypeSize.UInt16, d.Remaining())
 		return
 	}
 
-	out = binary.LittleEndian.Uint16(d.data[d.pos:])
-	d.pos += TypeSize.UInt16
+	out = binary.LittleEndian.Uint16(d.Data[d.Pos:])
+	d.Pos += TypeSize.UInt16
 	return
 }
 
 func (d *Decoder) readInt16() (out int16, err error) {
-	n, err := d.readUint16()
+	n, err := d.ReadUint16()
 	out = int16(n)
 	return
 }
@@ -276,73 +281,73 @@ func (d *Decoder) readInt64() (out int64, err error) {
 }
 
 func (d *Decoder) readUint32() (out uint32, err error) {
-	if d.remaining() < TypeSize.UInt32 {
-		err = fmt.Errorf("uint32 required [%d] bytes, remaining [%d]", TypeSize.UInt32, d.remaining())
+	if d.Remaining() < TypeSize.UInt32 {
+		err = fmt.Errorf("uint32 required [%d] bytes, remaining [%d]", TypeSize.UInt32, d.Remaining())
 		return
 	}
 
-	out = binary.LittleEndian.Uint32(d.data[d.pos:])
-	d.pos += TypeSize.UInt32
+	out = binary.LittleEndian.Uint32(d.Data[d.Pos:])
+	d.Pos += TypeSize.UInt32
 	return
 }
 
 func (d *Decoder) readUint64() (out uint64, err error) {
-	if d.remaining() < TypeSize.UInt64 {
-		err = fmt.Errorf("uint64 required [%d] bytes, remaining [%d]", TypeSize.UInt64, d.remaining())
+	if d.Remaining() < TypeSize.UInt64 {
+		err = fmt.Errorf("uint64 required [%d] bytes, remaining [%d]", TypeSize.UInt64, d.Remaining())
 		return
 	}
 
-	data := d.data[d.pos : d.pos+TypeSize.UInt64]
+	data := d.Data[d.Pos : d.Pos+TypeSize.UInt64]
 	out = binary.LittleEndian.Uint64(data)
-	d.pos += TypeSize.UInt64
+	d.Pos += TypeSize.UInt64
 	return
 }
 
 func (d *Decoder) readString() (out string, err error) {
-	data, err := d.readByteArray()
+	data, err := d.ReadByteArray()
 	out = string(data)
 	return
 }
 
 func (d *Decoder) readSHA256() (out SHA256Type, err error) {
 
-	if d.remaining() < TypeSize.SHA256Type {
-		err = fmt.Errorf("sha256 required [%d] bytes, remaining [%d]", TypeSize.SHA256Type, d.remaining())
+	if d.Remaining() < TypeSize.SHA256Type {
+		err = fmt.Errorf("sha256 required [%d] bytes, remaining [%d]", TypeSize.SHA256Type, d.Remaining())
 		return
 	}
 	out = SHA256Type{}
-	copy(out[:], d.data[d.pos : d.pos+TypeSize.SHA256Type])
-	d.pos += TypeSize.SHA256Type
+	copy(out[:], d.Data[d.Pos : d.Pos+TypeSize.SHA256Type])
+	d.Pos += TypeSize.SHA256Type
 	return
 }
 
 func (d *Decoder) readPublicKey() (out crypto.PublicKey, err error) {
 
-	if d.remaining() < TypeSize.PublicKey {
-		err = fmt.Errorf("publicKey required [%d] bytes, remaining [%d]", TypeSize.PublicKey, d.remaining())
+	if d.Remaining() < TypeSize.PublicKey {
+		err = fmt.Errorf("publicKey required [%d] bytes, remaining [%d]", TypeSize.PublicKey, d.Remaining())
 		return
 	}
 	out = crypto.PublicKey{
-		Content: d.data[d.pos : d.pos+TypeSize.PublicKey], // 33 bytes
+		Content: d.Data[d.Pos : d.Pos+TypeSize.PublicKey], // 33 bytes
 	}
 	return
 }
 
-func (d *Decoder) readSignature() (out crypto.Signature, err error) {
-	if d.remaining() < TypeSize.Signature {
-		err = fmt.Errorf("signature required [%d] bytes, remaining [%d]", TypeSize.Signature, d.remaining())
+func (d *Decoder) ReadSignature() (out crypto.Signature, err error) {
+	if d.Remaining() < TypeSize.Signature {
+		err = fmt.Errorf("signature required [%d] bytes, remaining [%d]", TypeSize.Signature, d.Remaining())
 		return
 	}
 	out = crypto.Signature{
-		Content: d.data[d.pos : d.pos+TypeSize.Signature], 	// 65 bytes
+		Content: d.Data[d.Pos : d.Pos+TypeSize.Signature], 	// 65 bytes
 	}
 	return
 }
 
-func (d *Decoder) readTimestamp() (out time.Time, err error) {
+func (d *Decoder) ReadTimestamp() (out time.Time, err error) {
 
-	if d.remaining() < TypeSize.Timestamp {
-		err = fmt.Errorf("tstamp required [%d] bytes, remaining [%d]", TypeSize.Timestamp, d.remaining())
+	if d.Remaining() < TypeSize.Timestamp {
+		err = fmt.Errorf("tstamp required [%d] bytes, remaining [%d]", TypeSize.Timestamp, d.Remaining())
 		return
 	}
 
@@ -351,8 +356,8 @@ func (d *Decoder) readTimestamp() (out time.Time, err error) {
 	return
 }
 
-func (d *Decoder) remaining() int {
-	return len(d.data) - d.pos
+func (d *Decoder) Remaining() int {
+	return len(d.Data) - d.Pos
 }
 
 func UnmarshalBinaryReader(reader io.Reader, v interface{}) (err error) {

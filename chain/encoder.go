@@ -5,67 +5,68 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
-	"errors"
-	"encoding/hex"
 	bytes2 "bytes"
 	"blockchain/crypto"
 	"time"
+	"errors"
 )
 
 type Encoder struct {
-	output io.Writer
+	Output io.Writer
 	Order  binary.ByteOrder
-	count  int
+	Count  int
+	Extension func(v interface{}) error
 }
 
 func NewEncoder(w io.Writer) *Encoder {
 	return &Encoder{
-		output: w,
+		Output: w,
 		Order:  binary.LittleEndian,
-		count:  0,
+		Count:  0,
+		Extension: nil,
 	}
 }
 
-func (e *Encoder) writeName(name Name) error {
+func (e *Encoder) WriteName(name Name) error {
 	val, err := StringToName(string(name))
 	if err != nil {
 		return fmt.Errorf("writeName: %s", err)
 	}
-	return e.writeUint64(val)
+	return e.WriteUint64(val)
 }
 
 func (e *Encoder) Encode(v interface{}) (err error) {
 	switch cv := v.(type) {
 	case Name:
-		return e.writeName(cv)
+		return e.WriteName(cv)
 	case AccountName:
 		name := Name(cv)
-		return e.writeName(name)
+		return e.WriteName(name)
 	case PermissionName:
 		name := Name(cv)
-		return e.writeName(name)
+		return e.WriteName(name)
 	case string:
-		return e.writeString(cv)
+		return e.WriteString(cv)
 	case byte:
-		return e.writeByte(cv)
+		return e.WriteByte(cv)
 	case int8:
-		return e.writeByte(byte(cv))
+		return e.WriteByte(byte(cv))
 	case int16:
-		return e.writeInt16(cv)
+		return e.WriteInt16(cv)
 	case uint16:
-		return e.writeUint16(cv)
+		return e.WriteUint16(cv)
 	case uint32:
-		return e.writeUint32(cv)
+		return e.WriteUint32(cv)
 	case uint64:
-		return e.writeUint64(cv)
+		return e.WriteUint64(cv)
 	case bool:
-		return e.writeBool(cv)
+		return e.WriteBool(cv)
 	case []byte:
-		return e.writeByteArray(cv)
+		return e.WriteByteArray(cv)
 	case SHA256Type:
-		return e.writeSHA256(cv)
+		return e.WriteSHA256(cv)
 	case crypto.PublicKey:
-		return e.writePublicKey(cv)
+		return e.WritePublicKey(cv)
 	case crypto.Signature:
 		return e.writeSignature(cv)
 	case time.Time:
@@ -86,7 +87,7 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 			}
 		case reflect.Slice:
 			l := rv.Len()
-			if err = e.writeUVarInt(l); err != nil {
+			if err = e.WriteUVarInt(l); err != nil {
 				return
 			}
 			for i := 0; i < l; i++ {
@@ -108,7 +109,7 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 						isPresent := true
 						if tag == "optional" {
 							isPresent = !v.IsNil()
-							e.writeBool(isPresent)
+							e.WriteBool(isPresent)
 						}
 						if isPresent {
 							if err = e.Encode(v.Interface()); err != nil {
@@ -120,7 +121,7 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 			}
 		case reflect.Map:
 			l := rv.Len()
-			if err = e.writeUVarInt(l); err != nil {
+			if err = e.WriteUVarInt(l); err != nil {
 				return
 			}
 			for _, key := range rv.MapKeys() {
@@ -133,84 +134,83 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 				}
 			}
 		default:
-			return errors.New("Encode: unsupported type " + t.String())
+			if e.Extension != nil {
+				return e.Extension(v)
+			}
+			return errors.New("Can not encode value of type " + t.String())
 		}
 	}
-
 	return
 }
 
-func (e *Encoder) toWriter(bytes []byte) (err error) {
-
-	e.count += len(bytes)
-	println(fmt.Sprintf("    Appending : [%s] pos [%d]", hex.EncodeToString(bytes), e.count))
-	_, err = e.output.Write(bytes)
+func (e *Encoder) ToWriter(bytes []byte) (err error) {
+	e.Count += len(bytes)
+	_, err = e.Output.Write(bytes)
 	return
 }
 
-func (e *Encoder) writeByteArray(b []byte) error {
-	println(fmt.Sprintf("writing byte array of len [%d]", len(b)))
-	if err := e.writeUVarInt(len(b)); err != nil {
+func (e *Encoder) WriteByteArray(b []byte) error {
+	if err := e.WriteUVarInt(len(b)); err != nil {
 		return err
 	}
-	return e.toWriter(b)
+	return e.ToWriter(b)
 }
 
-func (e *Encoder) writeUVarInt(v int) (err error) {
+func (e *Encoder) WriteUVarInt(v int) (err error) {
 	buf := make([]byte, 8)
 	l := binary.PutUvarint(buf, uint64(v))
-	return e.toWriter(buf[:l])
+	return e.ToWriter(buf[:l])
 }
 
-func (e *Encoder) writeByte(b byte) (err error) {
-	return e.toWriter([]byte{b})
+func (e *Encoder) WriteByte(b byte) (err error) {
+	return e.ToWriter([]byte{b})
 }
 
-func (e *Encoder) writeBool(b bool) (err error) {
+func (e *Encoder) WriteBool(b bool) (err error) {
 	var out byte
 	if b {
 		out = 1
 	}
-	return e.writeByte(out)
+	return e.WriteByte(out)
 }
 
-func (e *Encoder) writeUint16(i uint16) (err error) {
+func (e *Encoder) WriteUint16(i uint16) (err error) {
 	buf := make([]byte, TypeSize.UInt16)
 	binary.LittleEndian.PutUint16(buf, i)
-	return e.toWriter(buf)
+	return e.ToWriter(buf)
 }
 
-func (e *Encoder) writeInt16(i int16) (err error) {
-	return e.writeUint16(uint16(i))
+func (e *Encoder) WriteInt16(i int16) (err error) {
+	return e.WriteUint16(uint16(i))
 }
 
-func (e *Encoder) writeUint32(i uint32) (err error) {
+func (e *Encoder) WriteUint32(i uint32) (err error) {
 	buf := make([]byte, TypeSize.UInt32)
 	binary.LittleEndian.PutUint32(buf, i)
-	return e.toWriter(buf)
+	return e.ToWriter(buf)
 
 }
 
-func (e *Encoder) writeUint64(i uint64) (err error) {
+func (e *Encoder) WriteUint64(i uint64) (err error) {
 	buf := make([]byte, TypeSize.UInt64)
 	binary.LittleEndian.PutUint64(buf, i)
-	return e.toWriter(buf)
+	return e.ToWriter(buf)
 
 }
 
-func (e *Encoder) writeString(s string) (err error) {
-	return e.writeByteArray([]byte(s))
+func (e *Encoder) WriteString(s string) (err error) {
+	return e.WriteByteArray([]byte(s))
 }
 
-func (e *Encoder) writeSHA256(sha256 SHA256Type) error {
-	return e.toWriter(sha256[:])
+func (e *Encoder) WriteSHA256(sha256 SHA256Type) error {
+	return e.ToWriter(sha256[:])
 }
 
-func (e *Encoder) writePublicKey(publicKey crypto.PublicKey) error {
+func (e *Encoder) WritePublicKey(publicKey crypto.PublicKey) error {
 	if len(publicKey.Content) != 33 {
 		return fmt.Errorf("public key should be 33 bytes")
 	}
-	return e.toWriter(publicKey.Content)
+	return e.ToWriter(publicKey.Content)
 }
 
 func (e *Encoder) writeSignature(sig crypto.Signature) error {
@@ -218,12 +218,12 @@ func (e *Encoder) writeSignature(sig crypto.Signature) error {
 		return fmt.Errorf("signature should be 65 bytes")
 	}
 
-	return e.toWriter(sig.Content) // should write 65 bytes
+	return e.ToWriter(sig.Content) // should write 65 bytes
 }
 
 func (e *Encoder) writeTimestamp(t time.Time) error {
 	n := uint64(t.UnixNano())
-	return e.writeUint64(n)
+	return e.WriteUint64(n)
 }
 
 func MarshalBinary(v interface{}) ([]byte, error) {

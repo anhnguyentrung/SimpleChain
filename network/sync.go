@@ -133,7 +133,7 @@ func (sm *SyncManager) requestSyncBlocks(c *Connection, start, end uint32) {
 	}
 	msg := Message{
 		Header: MessageHeader{
-			Type:byte(SyncRequest),
+			Type:SyncRequest,
 			Length:0,
 		},
 		Content:syncMessage,
@@ -196,7 +196,7 @@ func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id c
 	req.ReqTrx.Mode = None
 	msg := Message{
 		Header: MessageHeader{
-			Type:byte(Request),
+			Type:Request,
 			Length:0,
 		},
 		Content:req,
@@ -218,7 +218,7 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 		noticeMsg.KnownTrx.Pending = uint32(len(node.LocalTrxs))
 		msg := Message{
 			Header: MessageHeader{
-				Type:byte(Notice),
+				Type:Notice,
 				Length:0,
 			},
 			Content:noticeMsg,
@@ -239,7 +239,7 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 			noticeMsg.KnownBlocks.Pending = head
 			msg := Message{
 				Header: MessageHeader{
-					Type:byte(Notice),
+					Type:Notice,
 					Length:0,
 				},
 				Content:noticeMsg,
@@ -260,7 +260,7 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 			noticeMsg.KnownTrx.Ids = append(noticeMsg.KnownTrx.Ids, headId)
 			msg := Message{
 				Header: MessageHeader{
-					Type:byte(Notice),
+					Type:Notice,
 					Length:0,
 				},
 				Content:noticeMsg,
@@ -322,7 +322,7 @@ func (sm *SyncManager) receiveBlock(c *Connection, node *Node, blockId chain.SHA
 
 func (sm *SyncManager) sendHanshakes(node *Node) {
 	for _,c := range node.Conns {
-		if c.Current() {
+		if c.Connected {
 			node.sendHandshake(c)
 		}
 	}
