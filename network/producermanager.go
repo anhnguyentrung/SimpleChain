@@ -269,7 +269,7 @@ func (pm *ProducerManager) produceBlock(node *Node) error {
 		return signatureProvider(digest)
 	}
 	blockchain.SignBlock(signer)
-	blockchain.CommitBlock()
+	blockchain.CommitBlock(node.acceptedBlock)
 	newBs := blockchain.Head
 	pm.ProducerWaterMarks[newBs.Header.Producer] = blockchain.Head.BlockNum
 	return nil

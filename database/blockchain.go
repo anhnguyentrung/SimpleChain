@@ -213,7 +213,7 @@ func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
 	bso.BlockId = id
 }
 
-func (bc *BlockChain) CommitBlock() {
+func (bc *BlockChain) CommitBlock(acceptedBlock func(bs *chain.BlockState)) {
 	//fmt.Println("commit block")
 	bc.Pending.PendingBlockState.Validated = true
 	newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
@@ -227,8 +227,7 @@ func (bc *BlockChain) CommitBlock() {
 		ubo.SetBlock(bc.Pending.PendingBlockState.Block)
 	}
 	//fmt.Println("block id: ", bc.Pending.PendingBlockState.BlockNum)
-	//accept block. Use invoked method later
-	// TODO
+	acceptedBlock(bc.Pending.PendingBlockState)
 }
 
 func (bc *BlockChain) SignBlock(signer chain.SignerCallBack) {

@@ -101,7 +101,7 @@ func (dm *DispatchManager) receiveNotice(c *Connection, node *Node, message Noti
 	if sendReq {
 		msg := Message{
 			Header: MessageHeader{
-				Type:Request,
+				Type:byte(Request),
 				Length:0,
 			},
 			Content:req,
@@ -131,10 +131,10 @@ func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) 
 	}
 	msg := Message{
 		Header: MessageHeader{
-			Type:SignedBlock,
+			Type:byte(SignedBlock),
 			Length:0,
 		},
 		Content:*block,
 	}
-
+	node.sendAll(skip, msg)
 }

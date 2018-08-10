@@ -45,7 +45,7 @@ const MaxTransactionTime = 30 // ms
 
 type MessageType interface {}
 type MessageHeader struct {
-	Type 	MessageTypes // 1 byte
+	Type 	byte // 1 byte
 	Length  uint32  	// 4 bytes
 }
 type Message struct {

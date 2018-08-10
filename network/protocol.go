@@ -59,6 +59,10 @@ func NewGoAwayMessage(reason GoAwayReason) GoAwayMessage {
 	}
 }
 
+func (msg GoAwayMessage) Serialize() ([]byte, error) {
+	return chain.MarshalBinary(msg)
+}
+
 type TimeMessage struct {
 	Origin time.Time
 	Receive time.Time

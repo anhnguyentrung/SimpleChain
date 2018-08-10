@@ -44,15 +44,6 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 	case PermissionName:
 		name := Name(cv)
 		return e.writeName(name)
-	case ActionName:
-		name := Name(cv)
-		return e.writeName(name)
-	case TableName:
-		name := Name(cv)
-		return e.writeName(name)
-	case ScopeName:
-		name := Name(cv)
-		return e.writeName(name)
 	case string:
 		return e.writeString(cv)
 	case byte:
@@ -71,12 +62,6 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 		return e.writeBool(cv)
 	case []byte:
 		return e.writeByteArray(cv)
-	case ActionData:
-		println("ActionData")
-		return e.writeActionData(cv)
-	case *ActionData:
-		println("*ActionData")
-		return e.writeActionData(*cv)
 	case SHA256Type:
 		return e.writeSHA256(cv)
 	case crypto.PublicKey:
@@ -94,45 +79,25 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 
 		case reflect.Array:
 			l := t.Len()
-			//prefix = append(prefix, "     ")
-			println(fmt.Sprintf("Encode: array [%T] of length: %d", v, l))
-
 			for i := 0; i < l; i++ {
 				if err = e.Encode(rv.Index(i).Interface()); err != nil {
 					return
 				}
 			}
-			//prefix = prefix[:len(prefix)-1]
 		case reflect.Slice:
 			l := rv.Len()
 			if err = e.writeUVarInt(l); err != nil {
 				return
 			}
-			//prefix = append(prefix, "     ")
-			println(fmt.Sprintf("Encode: slice [%T] of length: %d", v, l))
-
 			for i := 0; i < l; i++ {
 				if err = e.Encode(rv.Index(i).Interface()); err != nil {
 					return
 				}
 			}
-			//prefix = prefix[:len(prefix)-1]
-			//case reflect.Ptr:
-			//	println("*************************************************")
-			//	println("*************************************************")
-			//	println(fmt.Sprintf("PTR [%T]", v))
-			//	println("*************************************************")
-			//	println("*************************************************")
 		case reflect.Struct:
 			l := rv.NumField()
-			println(fmt.Sprintf("Encode: struct [%T] with %d field.", v, l))
-			//prefix = append(prefix, "     ")
-
 			for i := 0; i < l; i++ {
 				field := t.Field(i)
-				println(fmt.Sprintf("field -> %s", field.Name))
-				//fmt.Println(fmt.Sprintf("field -> %s", field.Name))
-
 				tag := field.Tag.Get("eos")
 				if tag == "-" {
 					continue
@@ -145,9 +110,6 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 							isPresent = !v.IsNil()
 							e.writeBool(isPresent)
 						}
-
-						//fmt.Printf("IS PRESENT: %T %#v\n", iface, iface, isPresent)
-
 						if isPresent {
 							if err = e.Encode(v.Interface()); err != nil {
 								return
@@ -156,15 +118,11 @@ func (e *Encoder) Encode(v interface{}) (err error) {
 					}
 				}
 			}
-			//prefix = prefix[:len(prefix)-1]
-
 		case reflect.Map:
-			fmt.Println("Encode Map")
 			l := rv.Len()
 			if err = e.writeUVarInt(l); err != nil {
 				return
 			}
-			fmt.Println(fmt.Sprintf("Map [%T] of length: %d", v, l))
 			for _, key := range rv.MapKeys() {
 				value := rv.MapIndex(key)
 				if err = e.Encode(key.Interface()); err != nil {
@@ -242,42 +200,6 @@ func (e *Encoder) writeUint64(i uint64) (err error) {
 
 func (e *Encoder) writeString(s string) (err error) {
 	return e.writeByteArray([]byte(s))
-}
-
-func (e *Encoder) writeActionData(actionData ActionData) (err error) {
-	if actionData.Data != nil {
-		//if reflect.TypeOf(actionData.Data) == reflect.TypeOf(&ActionData{}) {
-		//	log.Fatal("pas cool")
-		//}
-
-		println(fmt.Sprintf("entering action data, %T", actionData))
-		var d interface{}
-		d = actionData.Data
-		if reflect.TypeOf(d).Kind() == reflect.Ptr {
-			d = reflect.ValueOf(actionData.Data).Elem().Interface()
-		}
-
-		if reflect.TypeOf(d).Kind() == reflect.String { //todo : this is a very bad ack ......
-
-			data, err := hex.DecodeString(d.(string))
-			if err != nil {
-				return fmt.Errorf("ack, %s", err)
-			}
-			e.writeByteArray(data)
-			return nil
-
-		}
-
-		println(fmt.Sprintf("encoding action data, %T", d))
-		raw, err := MarshalBinary(d)
-		if err != nil {
-			return err
-		}
-		println(fmt.Sprintf("writing action data, %T", d))
-		return e.writeByteArray(raw)
-	}
-
-	return e.writeByteArray(actionData.HexData)
 }
 
 func (e *Encoder) writeSHA256(sha256 SHA256Type) error {

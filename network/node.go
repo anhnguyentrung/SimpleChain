@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"blockchain/btcsuite/btcd/btcec"
 	"blockchain/database"
+	"encoding/hex"
 )
 
 type Connection struct {
@@ -89,7 +90,7 @@ func (c *Connection) sendGoAwayMessage(reason GoAwayReason) error {
 	goAwayMsg := NewGoAwayMessage(reason)
 	msg := Message{
 		Header: MessageHeader{
-			Type:Handshake,
+			Type:byte(Handshake),
 			Length:0,
 		},
 		Content:goAwayMsg,
@@ -168,13 +169,16 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		NetworkVersionMatch: false,
 		BlockChain: database.NewBlockChain(),
 		Producer: NewProducerManager(),
+		Dispatcher: &DispatchManager{},
 	}
 }
 
-func (node *Node) Start() {
+func (node *Node) Start(isProducer bool) {
 	go node.ConnectToPeers()
 	go node.ListenFromPeers()
-	node.Producer.Startup(node)
+	if isProducer {
+		node.Producer.Startup(node)
+	}
 }
 
 // Receive message
@@ -228,6 +232,7 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	case SyncRequestMessage:
 		node.handleSyncRequest(c, msg)
 	case chain.SignedBlock:
+		node.handleSignedBlock(c, msg)
 	case chain.PackedTransaction:
 	}
 }
@@ -377,7 +382,7 @@ func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
 	if sendReq {
 		msg := Message{
 			Header: MessageHeader{
-				Type:Request,
+				Type:byte(Request),
 				Length:0,
 			},
 			Content:req,
@@ -432,13 +437,22 @@ func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
 		if block != nil && triggerSend {
 			msg := Message{
 				Header: MessageHeader{
-					Type:SignedBlock,
+					Type:byte(SignedBlock),
 					Length:0,
 				},
 				Content:*block,
 			}
 			c.sendMessage(msg)
 		}
+	}
+}
+
+func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock) {
+	blockchain := node.BlockChain
+	blockId := signedBlock.Id()
+	blockNum := signedBlock.BlockNum()
+	if blockchain.FetchBlockById(blockId) != nil {
+		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 	}
 }
 
@@ -455,7 +469,7 @@ func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) 
 			if !found {
 				msg := Message{
 					Header: MessageHeader{
-						Type:PackedTransaction,
+						Type:byte(PackedTransaction),
 						Length:0,
 					},
 					Content:tx.PackedTrx,
@@ -472,7 +486,7 @@ func (node *Node) transactionSend(c *Connection, ids []chain.SHA256Type) {
 		if tx != nil {
 			msg := Message{
 				Header: MessageHeader{
-					Type:PackedTransaction,
+					Type:byte(PackedTransaction),
 					Length:0,
 				},
 				Content:tx.PackedTrx,
@@ -491,7 +505,7 @@ func (node *Node) blockSend(c *Connection, ids []chain.SHA256Type) {
 		if block != nil {
 			msg := Message{
 				Header: MessageHeader{
-					Type:SignedBlock,
+					Type:byte(SignedBlock),
 					Length:0,
 				},
 				Content:*block,
@@ -512,7 +526,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 	if headNum == 0 {
 		msg := Message{
 			Header: MessageHeader{
-				Type:Notice,
+				Type:byte(Notice),
 				Length:0,
 			},
 			Content:noticeMsg,
@@ -526,7 +540,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 		fmt.Println("unable to retrieve block data")
 		msg := Message{
 			Header: MessageHeader{
-				Type:Notice,
+				Type:byte(Notice),
 				Length:0,
 			},
 			Content:noticeMsg,
@@ -551,7 +565,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 			for len(bStack) > 0 {
 				msg := Message{
 					Header: MessageHeader{
-						Type:SignedBlock,
+						Type:byte(SignedBlock),
 						Length:0,
 					},
 					Content:*bStack[len(bStack)-1],
@@ -742,7 +756,7 @@ func (node *Node) handleConnection(c *Connection) {
 			fmt.Println("Type ", err)
 			break
 		}
-		msgType := MessageTypes(typeBuf[0])
+		msgType := typeBuf[0]
 		lenBuf := make([]byte, 4, 4)
 		_, err = io.ReadFull(r, lenBuf)
 		if err != nil {
@@ -763,7 +777,7 @@ func (node *Node) handleConnection(c *Connection) {
 				Length:length,
 			},
 		}
-		switch msgType {
+		switch MessageTypes(msgType) {
 		case Handshake:
 			var msgContent HandshakeMessage
 			decoder := chain.NewDecoder(msgData)
@@ -869,7 +883,7 @@ func (node *Node) sendHandshake(c *Connection) (err error) {
 	c.LastHandshakeSent = handshakeMsg
 	msg := Message{
 		Header: MessageHeader{
-			Type:Handshake,
+			Type:byte(Handshake),
 			Length:0,
 		},
 		Content:handshakeMsg,
@@ -900,4 +914,9 @@ func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
 		}
 		c.sendMessage(message)
 	}
+}
+
+func (node *Node) acceptedBlock(block *chain.BlockState) {
+	fmt.Println("accepted block id ", hex.EncodeToString(block.Id[:]))
+	node.Dispatcher.broadcastBlock(block.Block, node)
 }
