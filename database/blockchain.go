@@ -250,13 +250,16 @@ func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chai
 
 func (bc *BlockChain) switchForks(blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
 	newHead := bc.ForkDatabase.Head
+	// if new head's previous block and blockchain's head have the same id, they are in the same branch.
+	// otherwise, if new head id is different from blockchain's head id, we have to switch between branches
 	if bytes2.Equal(newHead.Header.Previous[:], bc.Head.Id[:]) {
 		bc.applyBlock(newHead.Block, blockStatus, acceptedBlock)
 		bc.ForkDatabase.MarkInCurrentChain(newHead, true)
 		bc.ForkDatabase.SetValidity(newHead, true)
 		bc.Head = newHead
 	} else if !bytes2.Equal(newHead.Id[:], bc.Head.Id[:]) {
-		fmt.Printf("switch forks from %d to %d%\n", bc.Head.BlockNum)
+		fmt.Printf("switch forks from %d to %d%\n", bc.Head.BlockNum, newHead.BlockNum)
+		// get blocks on two branches
 		branches := bc.ForkDatabase.FectchBranchFrom(newHead.Id, bc.Head.Id)
 		for _, bs := range branches.Second.([]*chain.BlockState) {
 			bc.ForkDatabase.MarkInCurrentChain(bs, false)

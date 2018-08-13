@@ -11,7 +11,7 @@ import (
 )
 
 const PublicKeyPrefix = "PUB_"
-const PublicKeyPrefixCompat = "EOS"
+const PublicKeyPrefixCompat = "TFE"
 
 type PublicKey struct {
 	Content []byte
@@ -27,8 +27,8 @@ func NewPublicKey(pubKey string) (out PublicKey, err error) {
 		pubKeyMaterial = pubKey[len(PublicKeyPrefix):] // strip "PUB_"
 		pubKeyMaterial = pubKeyMaterial[3:] // strip "K1_"
 
-	} else if strings.HasPrefix(pubKey, PublicKeyPrefixCompat) { // "EOS"
-		pubKeyMaterial = pubKey[len(PublicKeyPrefixCompat):] // strip "EOS"
+	} else if strings.HasPrefix(pubKey, PublicKeyPrefixCompat) { // "TFE"
+		pubKeyMaterial = pubKey[len(PublicKeyPrefixCompat):] // strip "TFE"
 
 	} else {
 		return out, fmt.Errorf("public key should start with %q (or the old %q)", PublicKeyPrefix, PublicKeyPrefixCompat)
@@ -56,7 +56,6 @@ func checkDecode(input string) (result []byte, err error) {
 	if bytes.Compare(ripemd160checksum(decoded[:len(decoded)-4]), cksum[:]) != 0 {
 		return nil, fmt.Errorf("invalid checksum")
 	}
-	// perhaps bitcoin has a leading net ID / version, but EOS doesn't
 	payload := decoded[:len(decoded)-4]
 	result = append(result, payload...)
 	return
