@@ -65,3 +65,7 @@ const(
 )
 
 type SignerCallBack func(digest SHA256Type) crypto.Signature
+
+type Pair struct {
+	first, second interface{}
+}

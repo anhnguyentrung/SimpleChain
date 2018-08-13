@@ -7,6 +7,7 @@ import (
 	"blockchain/crypto"
 	"crypto/sha256"
 	"blockchain/chain"
+	"blockchain/utils"
 )
 
 type BlockChainConfig struct {
@@ -52,13 +53,6 @@ func NewBlockChain() *BlockChain {
 	return &bc
 }
 
-func max(a, b uint32) uint32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (bc *BlockChain) initializeForkDatabase() {
 	fmt.Println("Initializing new blockchain with genesis state")
 	pub, _ := crypto.NewPublicKey(bc.Config.Genesis.InitialKey)
@@ -97,7 +91,7 @@ func (bc *BlockChain) initializeDatabase() {
 }
 
 func (bc *BlockChain) LastIrreversibleBlockNum() uint32 {
-	return max(bc.Head.DPOSIrreversibleBlockNum, bc.Head.BFTIrreversibleBlockNum)
+	return utils.MaxUint32(bc.Head.DPOSIrreversibleBlockNum, bc.Head.BFTIrreversibleBlockNum)
 }
 
 func (bc *BlockChain) LastIrreversibleBlockId() *chain.SHA256Type {
@@ -234,4 +228,20 @@ func (bc *BlockChain) SignBlock(signer chain.SignerCallBack) {
 	p := bc.Pending.PendingBlockState
 	p.Sign(signer)
 	p.Block.SignedBlockHeader = p.Header
+}
+
+func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chain.BlockStatus) {
+	if bc.Pending != nil {
+		log.Fatal("pending block should be nil")
+	}
+	if signedBlock == nil {
+		log.Fatal("block should not be nil")
+	}
+	if blockStatus == chain.Incomplete {
+		log.Fatal("invalid block status")
+	}
+	trust := (blockStatus == chain.Irreversible || blockStatus == chain.Validated)
+	newBlockState := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
+	fmt.Println("accepted block ", newBlockState.BlockNum)
+
 }

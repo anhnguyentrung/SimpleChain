@@ -6,6 +6,8 @@ import (
 	"blockchain/crypto"
 	"sort"
 	"log"
+	bytes2 "bytes"
+	"blockchain/btcsuite/btcd/btcec"
 )
 
 type BlockHeader struct {
@@ -35,6 +37,11 @@ func NumFromId(id SHA256Type) uint32 {
 type SignedBlockHeader struct {
 	BlockHeader
 	ProducerSignature crypto.Signature
+}
+
+func (s *SignedBlockHeader) Digest() SHA256Type {
+	buf, _ := MarshalBinary(*s)
+	return sha256.Sum256(buf)
 }
 
 type SignedBlock struct {
@@ -73,26 +80,6 @@ func NewBlockHeaderState() BlockHeaderState {
 	}
 }
 
-type BlockState struct {
-	BlockHeaderState
-	Block *SignedBlock
-	Validated bool
-	InCurrentChain bool
-	Trxs []*TransactionMetaData
-}
-
-type TransactionReceiptHeader struct {
-	Status TransactionStatus
-	CPUUsageMs uint32
-	NetUsageWords Varuint32
-}
-
-type TransactionReceipt struct {
-	TransactionReceiptHeader
-	Id SHA256Type
-	PackedTrx PackedTransaction
-}
-
 func (bhs *BlockHeaderState) GetScheduledProducer(t uint64) ProducerKey  {
 	blockTs := NewBlockTimeStamp()
 	blockTs.SetTime(t)
@@ -101,6 +88,7 @@ func (bhs *BlockHeaderState) GetScheduledProducer(t uint64) ProducerKey  {
 	return bhs.ActiveSchedule.Producers[index]
 }
 
+// generate next blockstate from pending block
 func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 	nextBhs := NewBlockHeaderState()
 	newBlockTs := NewBlockTimeStamp()
@@ -135,6 +123,46 @@ func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 	}
 	//fmt.Println("next block id: ", nextBhs.BlockNum)
 	return nextBhs
+}
+
+// generate next block state from incoming block
+func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust bool) BlockHeaderState {
+	if signedBlockHeader.Timestamp.ToTime().UnixNano() <= bhs.Header.Timestamp.ToTime().UnixNano() {
+		log.Fatal("block must be later in time")
+	}
+	signedBlockId := signedBlockHeader.Id()
+	bhsId := bhs.Id
+	if !bytes2.Equal(signedBlockId[:], bhsId[:]) {
+		log.Fatal("block must be to current state")
+	}
+	nextBhs := bhs.GenerateNext(uint64(signedBlockHeader.Timestamp.ToTime().UnixNano()))
+	if nextBhs.Header.Producer != signedBlockHeader.Producer {
+		log.Fatal("wrong producer")
+	}
+	if nextBhs.Header.ScheducerVersion != signedBlockHeader.ScheducerVersion {
+		log.Fatal("wrong schedule version")
+	}
+	if blockNum, ok := bhs.ProducerToLastProduced[signedBlockHeader.Producer]; ok {
+		if blockNum < nextBhs.BlockNum - uint32(signedBlockHeader.Confirmed) {
+			log.Fatal("double confirming")
+		}
+	}
+	nextBhs.SetConfirmed(signedBlockHeader.Confirmed)
+	//nextBhs.MaybePromotePending()
+	nextBhs.Header.ProducerSignature = signedBlockHeader.ProducerSignature
+	nextBhs.Id = nextBhs.Header.Id()
+	if !trust {
+		if !bytes2.Equal(nextBhs.BlockSigningKey.Content, nextBhs.pubKey().Content) {
+			log.Fatal("block is signed by wrong key")
+		}
+	}
+	return nextBhs
+}
+
+func (bhs *BlockHeaderState) pubKey() crypto.PublicKey {
+	digest := bhs.Digest()
+	pub, _, _ := btcec.RecoverCompact(btcec.S256(), bhs.Header.ProducerSignature.Content, digest[:])
+	return crypto.PublicKey{Content:pub.SerializeCompressed()}
 }
 
 func (bhs *BlockHeaderState) CalcDposLastIrreversible() uint32 {
@@ -222,6 +250,21 @@ func (bhs *BlockHeaderState) Sign(signer SignerCallBack) {
 	bhs.Header.ProducerSignature = signer(d)
 }
 
+func (bhs *BlockHeaderState) Digest() SHA256Type {
+	headerDigest := bhs.Header.Digest()
+	pair := Pair{first: headerDigest, second: bhs.PendingScheduleHash}
+	buf, _ := MarshalBinary(pair)
+	return sha256.Sum256(buf)
+}
+
+type BlockState struct {
+	BlockHeaderState
+	Block *SignedBlock
+	Validated bool
+	InCurrentChain bool
+	Trxs []*TransactionMetaData
+}
+
 func NewBlockState(head BlockHeaderState, when uint64) *BlockState {
 	newBs := &BlockState{
 		head.GenerateNext(when),
@@ -232,4 +275,27 @@ func NewBlockState(head BlockHeaderState, when uint64) *BlockState {
 	}
 	newBs.Block.SignedBlockHeader = newBs.Header
 	return newBs
+}
+
+func NewBlockStateFromSignedBlock(previousBHS *BlockHeaderState, signedBlock *SignedBlock, trust bool) *BlockState {
+	newBs := &BlockState{
+		previousBHS.Next(signedBlock.SignedBlockHeader, trust),
+		signedBlock,
+		false,
+		false,
+		[]*TransactionMetaData{},
+	}
+	return newBs
+}
+
+type TransactionReceiptHeader struct {
+	Status TransactionStatus
+	CPUUsageMs uint32
+	NetUsageWords Varuint32
+}
+
+type TransactionReceipt struct {
+	TransactionReceiptHeader
+	Id SHA256Type
+	PackedTrx PackedTransaction
 }

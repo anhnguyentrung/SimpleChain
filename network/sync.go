@@ -293,36 +293,36 @@ func (sm *SyncManager) receiveNotice(c *Connection, node *Node, message NoticeMe
 }
 
 func (sm *SyncManager) receiveBlock(c *Connection, node *Node, blockId chain.SHA256Type, blockNum uint32) {
-	fmt.Printf("Got block %d from %s\n", blockNum, c.PeerName())
-	if sm.state == Lib_Catchup {
-		if blockNum != sm.syncNextExpectedNum {
-			fmt.Println("Expected block num %d but god %d\n", sm.syncNextExpectedNum, blockNum)
-			return
-		}
-		sm.syncNextExpectedNum = blockNum + 1
-	}
-	if sm.state == Head_Catchup {
-		sm.setState(In_Sync)
-		sm.source = nil
-		nullId := chain.SHA256Type{}
-		for _, connection := range node.Conns {
-			if bytes.Equal(nullId[:], connection.ForkHead[:]) {
-				continue
-			}
-			if bytes.Equal(blockId[:], connection.ForkHead[:]) || connection.ForkHeadNum < blockNum {
-				connection.ForkHead = nullId
-				connection.ForkHeadNum = 0
-			} else {
-				sm.setState(Head_Catchup)
-			}
-		}
-	} else if sm.state == Lib_Catchup {
-		if blockNum == sm.syncKnownLibNum {
-			sm.setState(In_Sync)
-		} else if blockNum == sm.syncLastRequestedNum {
-			sm.requestNextChunk(c, node)
-		}
-	}
+	//fmt.Printf("Got block %d from %s\n", blockNum, c.PeerName())
+	//if sm.state == Lib_Catchup {
+	//	if blockNum != sm.syncNextExpectedNum {
+	//		fmt.Println("Expected block num %d but god %d\n", sm.syncNextExpectedNum, blockNum)
+	//		return
+	//	}
+	//	sm.syncNextExpectedNum = blockNum + 1
+	//}
+	//if sm.state == Head_Catchup {
+	//	sm.setState(In_Sync)
+	//	sm.source = nil
+	//	nullId := chain.SHA256Type{}
+	//	for _, connection := range node.Conns {
+	//		if bytes.Equal(nullId[:], connection.ForkHead[:]) {
+	//			continue
+	//		}
+	//		if bytes.Equal(blockId[:], connection.ForkHead[:]) || connection.ForkHeadNum < blockNum {
+	//			connection.ForkHead = nullId
+	//			connection.ForkHeadNum = 0
+	//		} else {
+	//			sm.setState(Head_Catchup)
+	//		}
+	//	}
+	//} else if sm.state == Lib_Catchup {
+	//	if blockNum == sm.syncKnownLibNum {
+	//		sm.setState(In_Sync)
+	//	} else if blockNum == sm.syncLastRequestedNum {
+	//		sm.requestNextChunk(c, node)
+	//	}
+	//}
 }
 
 func (sm *SyncManager) sendHanshakes(node *Node) {

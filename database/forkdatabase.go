@@ -3,6 +3,7 @@ package database
 import (
 	"blockchain/chain"
 	"bytes"
+	"log"
 )
 
 type ForkDatabase struct {
@@ -32,4 +33,22 @@ func (fb *ForkDatabase) Add(bs *chain.BlockState) *chain.BlockState {
 	fb.BlockStates = append(fb.BlockStates, bs)
 	fb.Head = fb.BlockStates[len(fb.BlockStates) - 1]
 	return bs
+}
+
+func (fb *ForkDatabase) AddSignedBlock(signedBlock *chain.SignedBlock, trust bool) *chain.BlockState {
+	if signedBlock == nil {
+		log.Fatal("block must not be nil")
+	}
+	if fb.Head == nil {
+		log.Fatal("no head block")
+	}
+	if fb.GetBlock(signedBlock.Id()) != nil {
+		log.Fatal("this block existed in database")
+	}
+	previousBlock := fb.GetBlock(signedBlock.Previous)
+	if previousBlock == nil {
+		log.Fatal("unlinkable block")
+	}
+	blockState := chain.NewBlockStateFromSignedBlock(&previousBlock.BlockHeaderState, signedBlock, trust)
+	return fb.Add(blockState)
 }

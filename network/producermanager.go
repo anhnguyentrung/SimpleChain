@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"bytes"
+	"blockchain/utils"
 )
 
 type PendingBlockMode uint8
@@ -25,6 +26,9 @@ type ProducerManager struct {
 	PendingBlockMode PendingBlockMode
 	PersitentTransactions []*database.TransactionObject
 	IrreversibleBlockTime time.Time
+	lastSignedBlockTime time.Time
+	startTime time.Time
+	lastSignedBlockNum uint32
 	timer *time.Timer
 }
 
@@ -35,6 +39,8 @@ func NewProducerManager() *ProducerManager {
 	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
 	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
 	pm.ProducerWaterMarks = make(map[chain.AccountName]uint32, 0)
+	pm.startTime = time.Now()
+	pm.lastSignedBlockNum = 0
 	return &pm
 }
 
@@ -110,7 +116,7 @@ func (pm *ProducerManager) scheduleProductionLoop(node *Node) {
 				if nextProducerBlockTime != 0 {
 					producerWakeupTime := nextProducerBlockTime - chain.BLOCK_INTERVAL_NS
 					if wakeupTime != 0 {
-						wakeupTime = MinUint64(wakeupTime, producerWakeupTime)
+						wakeupTime = utils.MinUint64(wakeupTime, producerWakeupTime)
 					} else {
 						wakeupTime = producerWakeupTime
 					}
@@ -132,13 +138,6 @@ func (pm *ProducerManager) scheduleProductionLoop(node *Node) {
 			fmt.Println("Speculative Block Created")
 		}
 	}
-}
-
-func MinUint64(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (pm *ProducerManager) calculateNextBlockTime(blockchain *database.BlockChain, producerName chain.AccountName) uint64 {
@@ -182,13 +181,6 @@ func (pm *ProducerManager) calculateNextBlockTime(blockchain *database.BlockChai
 	}
 }
 
-func max(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountName, error) {
 	for _, producer := range pm.Producers {
 		if producer == name {
@@ -203,7 +195,7 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	headBlockState := blockchain.Head
 	now := uint64(time.Now().UnixNano())
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano()) //nanosecond
-	base := max(now, headBlockTime)
+	base := utils.MaxUint64(now, headBlockTime)
 	minTimeToNextBlock := chain.BLOCK_INTERVAL_NS - (base % chain.BLOCK_INTERVAL_NS)
 	blockTime := base + minTimeToNextBlock
 	if (blockTime - minTimeToNextBlock) < (chain.BLOCK_INTERVAL_NS / 10) {
@@ -235,7 +227,7 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	if pm.PendingBlockMode == Producing {
 		if hasWaterMark {
 			if currentWaterMark < headBlockState.BlockNum {
-				blocksToConfirm = min(math.MaxUint16, uint16(headBlockState.BlockNum - currentWaterMark))
+				blocksToConfirm = utils.Min(math.MaxUint16, uint16(headBlockState.BlockNum - currentWaterMark))
 			}
 		}
 	}
@@ -275,13 +267,6 @@ func (pm *ProducerManager) produceBlock(node *Node) error {
 	return nil
 }
 
-func min(a, b uint16) uint16 {
-	if a < b {
-		return  a
-	}
-	return b
-}
-
 // return ms
 func (pm *ProducerManager) getIrriversibleBlockAge() uint64 {
 	now := time.Now()
@@ -290,4 +275,66 @@ func (pm *ProducerManager) getIrriversibleBlockAge() uint64 {
 	} else {
 		return uint64(now.UnixNano() - pm.IrreversibleBlockTime.UnixNano())
 	}
+}
+
+//func (pm *ProducerManager) onBlock(blockState *chain.BlockState) {
+//	if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.lastSignedBlockTime.UnixNano() {
+//		fmt.Println("received block time is invalid")
+//		return
+//	}
+//	if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.startTime.UnixNano() {
+//		fmt.Println("received block time is invalid")
+//		return
+//	}
+//	if blockState.BlockNum <= pm.lastSignedBlockNum {
+//		fmt.Println("received block num is invalid")
+//		return
+//	}
+//	bsActiveProducers := blockState.ActiveSchedule.Producers
+//	activeProducers := []chain.AccountName{}
+//	for _, p := range bsActiveProducers {
+//		activeProducers = append(activeProducers, p.ProducerName)
+//	}
+//	intersect, ok := arrayOperations.Intersect(activeProducers, pm.Producers)
+//	if !ok {
+//		return
+//	}
+//	intersectProducers, ok := intersect.Interface().([]chain.AccountName)
+//	if !ok {
+//		return
+//	}
+//	for _, p := range intersectProducers {
+//		if p != blockState.Header.Producer {
+//			producerKey, err := findProducerName(p, bsActiveProducers)
+//			if err == nil {
+//				if signer, ok := pm.SignatureProviders[producerKey.BlockSigningKey.String()]; ok {
+//					digest := blockState.Digest()
+//					sig := signer(digest)
+//					pm.lastSignedBlockTime = blockState.Header.Timestamp.ToTime()
+//					pm.lastSignedBlockNum = blockState.BlockNum
+//				}
+//			}
+//		}
+//	}
+//}
+
+func (pm *ProducerManager) onIncomingBlock(signedBlock *chain.SignedBlock, node *Node) {
+	blockchain := node.BlockChain
+	blockId := signedBlock.Id()
+	// if incoming block is included in the local blockchain, we don't need handle it
+	if blockchain.FetchBlockById(blockId) != nil {
+		return
+	}
+	// abort pending block. We move transactions of pending block to un-applied transactions
+	blockchain.AbortBlock()
+
+}
+
+func findProducerName(name chain.AccountName, producers []chain.ProducerKey) (chain.ProducerKey, error) {
+	for _, producer := range producers {
+		if producer.ProducerName == name {
+			return producer, nil
+		}
+	}
+	return chain.ProducerKey{}, fmt.Errorf("producer does not exist")
 }

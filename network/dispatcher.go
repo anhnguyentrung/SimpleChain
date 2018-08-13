@@ -139,3 +139,7 @@ func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) 
 	}
 	node.sendAll(skip, msg)
 }
+
+func (dm *DispatchManager) receiveBlock(c *Connection, blockId chain.SHA256Type, blockNum uint32) {
+	dm.ReceivedBlocks = append(dm.ReceivedBlocks, BlockOrigin{Id: blockId, Origin: c})
+}

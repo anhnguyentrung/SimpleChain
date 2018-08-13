@@ -451,13 +451,15 @@ func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
 }
 
 func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock) {
-	//blockchain := node.BlockChain
-	//blockId := signedBlock.Id()
+	blockchain := node.BlockChain
+	blockId := signedBlock.Id()
 	blockNum := signedBlock.BlockNum()
 	fmt.Println("receive block ", blockNum)
-	//if blockchain.FetchBlockById(blockId) != nil {
-	//	node.SyncManager.receiveBlock(c, node, blockId, blockNum)
-	//}
+	if blockchain.FetchBlockById(blockId) != nil {
+		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
+	}
+	node.Dispatcher.receiveBlock(c, blockId, blockNum)
+
 }
 
 func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
@@ -908,3 +910,4 @@ func (node *Node) acceptedBlock(block *chain.BlockState) {
 	fmt.Println("accepted block ", block.BlockNum)
 	node.Dispatcher.broadcastBlock(block.Block, node)
 }
+
