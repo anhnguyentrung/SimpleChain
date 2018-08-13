@@ -52,3 +52,69 @@ func (fb *ForkDatabase) AddSignedBlock(signedBlock *chain.SignedBlock, trust boo
 	blockState := chain.NewBlockStateFromSignedBlock(&previousBlock.BlockHeaderState, signedBlock, trust)
 	return fb.Add(blockState)
 }
+
+func (fb *ForkDatabase) MarkInCurrentChain(blockState *chain.BlockState, inCurrentChain bool) {
+	if blockState.InCurrentChain == inCurrentChain {
+		return
+	}
+	bs := fb.GetBlock(blockState.Id)
+	if bs == nil {
+		log.Fatal("can not find block in fork database")
+	}
+	bs.InCurrentChain = inCurrentChain
+}
+
+func (fb *ForkDatabase) SetValidity(blockState *chain.BlockState, valid bool) {
+	if !valid {
+		fb.remove(blockState.Id)
+	} else {
+		blockState.Validated = true
+	}
+}
+
+func (fb *ForkDatabase) remove(id chain.SHA256Type) {
+	for index, bs := range fb.BlockStates {
+		if bytes.Equal(bs.Id[:], id[:]) {
+			fb.BlockStates = append(fb.BlockStates[:index], fb.BlockStates[index+1:]...)
+			return
+		}
+	}
+}
+
+func (fb *ForkDatabase) FectchBranchFrom(first chain.SHA256Type, second chain.SHA256Type) chain.Pair {
+	result := chain.Pair{
+		[]*chain.BlockState{},
+		[]*chain.BlockState{},
+	}
+	firstBs := fb.GetBlock(first)
+	secondBs := fb.GetBlock(second)
+	for firstBs.BlockNum > secondBs.BlockNum {
+		result.First = append(result.First.([]*chain.BlockState), firstBs)
+		firstBs = fb.GetBlock(firstBs.Header.Previous)
+		if firstBs == nil {
+			log.Fatal("can not find previous block")
+		}
+	}
+	for secondBs.BlockNum > firstBs.BlockNum {
+		result.Second = append(result.Second.([]*chain.BlockState), secondBs)
+		secondBs = fb.GetBlock(secondBs.Header.Previous)
+		if secondBs == nil {
+			log.Fatal("can not find previous block")
+		}
+	}
+	for firstBs.Header.Previous != secondBs.Header.Previous {
+		result.First = append(result.First.([]*chain.BlockState), firstBs)
+		result.Second = append(result.Second.([]*chain.BlockState), secondBs)
+		firstBs = fb.GetBlock(firstBs.Header.Previous)
+		secondBs = fb.GetBlock(secondBs.Header.Previous)
+		if firstBs == nil || secondBs == nil {
+			log.Fatal("can not find previous block")
+		}
+	}
+
+	if firstBs != nil && secondBs != nil {
+		result.First = append(result.First.([]*chain.BlockState), firstBs)
+		result.Second = append(result.Second.([]*chain.BlockState), secondBs)
+	}
+	return result
+}

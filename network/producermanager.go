@@ -261,7 +261,7 @@ func (pm *ProducerManager) produceBlock(node *Node) error {
 		return signatureProvider(digest)
 	}
 	blockchain.SignBlock(signer)
-	blockchain.CommitBlock(node.acceptedBlock)
+	blockchain.CommitBlock(node.acceptedBlock, true)
 	newBs := blockchain.Head
 	pm.ProducerWaterMarks[newBs.Header.Producer] = blockchain.Head.BlockNum
 	return nil
@@ -327,7 +327,7 @@ func (pm *ProducerManager) onIncomingBlock(signedBlock *chain.SignedBlock, node 
 	}
 	// abort pending block. We move transactions of pending block to un-applied transactions
 	blockchain.AbortBlock()
-
+	blockchain.PushBlock(signedBlock, chain.Complete, node.acceptedBlock)
 }
 
 func findProducerName(name chain.AccountName, producers []chain.ProducerKey) (chain.ProducerKey, error) {

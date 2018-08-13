@@ -252,7 +252,7 @@ func (bhs *BlockHeaderState) Sign(signer SignerCallBack) {
 
 func (bhs *BlockHeaderState) Digest() SHA256Type {
 	headerDigest := bhs.Header.Digest()
-	pair := Pair{first: headerDigest, second: bhs.PendingScheduleHash}
+	pair := Pair{First: headerDigest, Second: bhs.PendingScheduleHash}
 	buf, _ := MarshalBinary(pair)
 	return sha256.Sum256(buf)
 }

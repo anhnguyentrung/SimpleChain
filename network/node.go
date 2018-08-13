@@ -459,7 +459,9 @@ func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock
 		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 	}
 	node.Dispatcher.receiveBlock(c, blockId, blockNum)
-
+	// confirm block and sync with local database
+	node.Producer.onIncomingBlock(&signedBlock, node)
+	node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 }
 
 func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {

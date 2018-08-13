@@ -207,13 +207,15 @@ func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
 	bso.BlockId = id
 }
 
-func (bc *BlockChain) CommitBlock(acceptedBlock func(bs *chain.BlockState)) {
+func (bc *BlockChain) CommitBlock(acceptedBlock func(bs *chain.BlockState), addToForkFB bool) {
 	//fmt.Println("commit block")
-	bc.Pending.PendingBlockState.Validated = true
-	newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
-	bc.Head = bc.ForkDatabase.Head
-	if newBsp != bc.Head {
-		log.Fatal("committed block did not become the new head in fork database")
+	if addToForkFB {
+		bc.Pending.PendingBlockState.Validated = true
+		newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
+		bc.Head = bc.ForkDatabase.Head
+		if newBsp != bc.Head {
+			log.Fatal("committed block did not become the new head in fork database")
+		}
 	}
 	if !bc.Replaying {
 		ubo := ReversibleBlockObject{}
@@ -230,7 +232,7 @@ func (bc *BlockChain) SignBlock(signer chain.SignerCallBack) {
 	p.Block.SignedBlockHeader = p.Header
 }
 
-func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chain.BlockStatus) {
+func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
 	if bc.Pending != nil {
 		log.Fatal("pending block should be nil")
 	}
@@ -243,5 +245,67 @@ func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chai
 	trust := (blockStatus == chain.Irreversible || blockStatus == chain.Validated)
 	newBlockState := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
 	fmt.Println("accepted block ", newBlockState.BlockNum)
+	bc.switchForks(blockStatus, acceptedBlock)
+}
 
+func (bc *BlockChain) switchForks(blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
+	newHead := bc.ForkDatabase.Head
+	if bytes2.Equal(newHead.Header.Previous[:], bc.Head.Id[:]) {
+		bc.applyBlock(newHead.Block, blockStatus, acceptedBlock)
+		bc.ForkDatabase.MarkInCurrentChain(newHead, true)
+		bc.ForkDatabase.SetValidity(newHead, true)
+		bc.Head = newHead
+	} else if !bytes2.Equal(newHead.Id[:], bc.Head.Id[:]) {
+		fmt.Printf("switch forks from %d to %d%\n", bc.Head.BlockNum)
+		branches := bc.ForkDatabase.FectchBranchFrom(newHead.Id, bc.Head.Id)
+		for _, bs := range branches.Second.([]*chain.BlockState) {
+			bc.ForkDatabase.MarkInCurrentChain(bs, false)
+			bc.popBlock()
+		}
+		secondBranchHeadId := branches.Second.([]*chain.BlockState)[len(branches.Second.([]*chain.BlockState))-1].Header.Previous
+		if !bytes2.Equal(bc.Head.Id[:], secondBranchHeadId[:]) {
+			log.Fatal("loss sync")
+		}
+		for _, bs := range branches.First.([]*chain.BlockState) {
+			var bStatus chain.BlockStatus = chain.Validated
+			if !bs.Validated {
+				bStatus = chain.Complete
+			}
+			bc.applyBlock(bs.Block, bStatus, acceptedBlock)
+			bc.Head = bs
+			bc.ForkDatabase.MarkInCurrentChain(bs, true)
+			bs.Validated = true
+		}
+	}
+}
+
+func (bc *BlockChain) applyBlock(signedBlock *chain.SignedBlock, blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
+	bc.StartBlock(uint64(signedBlock.Timestamp.ToTime().UnixNano()), signedBlock.Confirmed, blockStatus)
+	bc.FinalizeBlock()
+	signer := func(digest chain.SHA256Type) crypto.Signature {
+		return signedBlock.ProducerSignature
+	}
+	bc.SignBlock(signer)
+	bc.CommitBlock(acceptedBlock, false)
+}
+
+func (bc *BlockChain) popBlock() {
+	previousBlock := bc.ForkDatabase.GetBlock(bc.Head.Header.Previous)
+	if previousBlock == nil {
+		log.Fatal("don't pop last block")
+	}
+	// remove the block from reversible blocks
+	for index, rbo := range bc.ReversibleBlocks {
+		// find by block num
+		if rbo.BlockNum == bc.Head.BlockNum {
+			bc.ReversibleBlocks = append(bc.ReversibleBlocks[:index], bc.ReversibleBlocks[index+1:]...)
+			break
+		}
+	}
+	// move transactions in the block to un-applied transactions
+	for _, trx := range bc.Head.Trxs {
+		bc.UnAppliedTransactions[trx.Signed] = trx
+	}
+	// assign previous block to head
+	bc.Head = previousBlock
 }
