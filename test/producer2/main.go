@@ -6,6 +6,7 @@ import (
 	"log"
 	"blockchain/network"
 	"blockchain/wallet"
+	"blockchain/chain"
 )
 
 func createProducer2() (*wallet.SoftWallet, crypto.PublicKey) {
@@ -24,7 +25,9 @@ func createProducer2() (*wallet.SoftWallet, crypto.PublicKey) {
 	}
 	sw.UnLock("pass")
 	pub := sw.ListPublicKeys()[0]
+	priv := sw.ListKeys()[pub.String()]
 	fmt.Println("pub ", pub.String())
+	fmt.Println("priv ", priv.String())
 	return sw, pub
 }
 
@@ -40,6 +43,8 @@ func main() {
 	node.ChainId = node.BlockChain.ChainId
 	node.NodeId = node.ChainId
 	node.PrivateKeys[pub.String()] = privateKey
+	node.Producer.Producers = append(node.Producer.Producers, chain.AccountName("producer2"))
+	node.Producer.SignatureProviders[pub.String()] = network.MakeKeySignatureProvider(privateKey.String())
 	done := make(chan bool)
 	node.Start(true)
 	<- done
