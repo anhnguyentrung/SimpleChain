@@ -27,6 +27,18 @@ const MAXIMUM_TRACKED_DPOS_CONFIRMATIONS = 1024
 const DEFAULT_PUBLIC_KEY = "TFE6MRyAjQq8ud7hVNYcfnVPJqcVpscN5So8BhtHuGYqET5GDW5CV"
 const DEFAULT_PRIVATE_KEY = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3"
 const DEFAULT_PRODUCER_NAME = "default"
+//var PRODUCER_NAMES = []AccountName{"producer1", "producer2", "producer3"}
+//var PRODUCER_PUBLIC_KEYS = []string{"TFE6iUYUS4AwL6n24WbmWwh4LLEz9YR1iBkoZ8ngYzKNdE3r1fFCG",
+//	"TFE7xdVzyn6SbPvaraYXstwwrmBMvp9c9RiDSHh1E8eGNp1eQop9R",
+//	"TFE8MQZrjMuqGkL4SThoALHPtghmnoP6VV269RWqry5SLopfAyP3J"}
+//var PRODUCER_PRIVATE_KEYS = []string{"5JvUoipxNsmU3qZcSGKZdeZXTKQVYYAagFagMTsYDyHWPggesjT",
+//	"5JEibiM8xtZVJkKoc6FuePSnAeZp3qoQF3GV6HH5om7tLTDBmR2",
+//	"5JcFeFTmBsWgEPKDibq2J4ZBPTSEjDg9LemZpfRnHHBzteFMvGH"}
+var PRODUCER_NAMES = []AccountName{"producer1", "producer2"}
+var PRODUCER_PUBLIC_KEYS = []string{"TFE6iUYUS4AwL6n24WbmWwh4LLEz9YR1iBkoZ8ngYzKNdE3r1fFCG",
+	"TFE7xdVzyn6SbPvaraYXstwwrmBMvp9c9RiDSHh1E8eGNp1eQop9R"}
+var PRODUCER_PRIVATE_KEYS = []string{"5JvUoipxNsmU3qZcSGKZdeZXTKQVYYAagFagMTsYDyHWPggesjT",
+	"5JEibiM8xtZVJkKoc6FuePSnAeZp3qoQF3GV6HH5om7tLTDBmR2"}
 
 type Extension struct {
 	Type uint16

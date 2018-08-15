@@ -15,7 +15,7 @@ func unmarshalBinary(data []byte, v interface{}) (err error) {
 	extension := func(v interface{}) error {
 		rv := reflect.Indirect(reflect.ValueOf(v))
 		switch v.(type) {
-		case *MessageTypes, *GoAwayReason:
+		case *MessageTypes, *GoAwayReason, *IdListModes:
 			var n byte
 			n, err := decoder.ReadByte()
 			rv.SetUint(uint64(n))

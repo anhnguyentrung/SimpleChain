@@ -83,12 +83,12 @@ type OrderedBlockIds struct {
 }
 
 type NoticeMessage struct {
-	KnownTrx OrderedTransactionIds
+	//KnownTrx OrderedTransactionIds
 	KnownBlocks OrderedBlockIds
 }
 
 type RequestMessage struct {
-	ReqTrx OrderedTransactionIds
+	//ReqTrx OrderedTransactionIds
 	ReqBlocks OrderedBlockIds
 }
 

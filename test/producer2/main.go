@@ -7,6 +7,7 @@ import (
 	"blockchain/network"
 	"blockchain/wallet"
 	"blockchain/chain"
+	"crypto/sha256"
 )
 
 func createProducer2() (*wallet.SoftWallet, crypto.PublicKey) {
@@ -38,14 +39,26 @@ func main() {
 	if privateKey.PublicKey().String() != pub.String() {
 		log.Fatal("key is wrong")
 	}
-	node := network.NewNode("0.0.0.0:2001", []string{"localhost:2002"})
+	producers := []chain.ProducerKey{}
+	node := network.NewNode("0.0.0.0:2001", []string{"localhost:2000"})
+	for index, producerName := range chain.PRODUCER_NAMES {
+		producerPub, _ := crypto.NewPublicKey(chain.PRODUCER_PUBLIC_KEYS[index])
+		producerKey := chain.ProducerKey{
+			producerName,
+			producerPub,
+		}
+		producers = append(producers, producerKey)
+		node.AllowPeers = append(node.AllowPeers, producerPub)
+	}
 	node.NetworkVersion = 1
 	node.ChainId = node.BlockChain.ChainId
-	node.NodeId = node.ChainId
+	random, _ := crypto.NewRandomPrivateKey()
+	node.NodeId = sha256.Sum256([]byte(random.String()))
 	node.PrivateKeys[pub.String()] = privateKey
 	node.Producer.Producers = append(node.Producer.Producers, chain.AccountName("producer2"))
 	node.Producer.SignatureProviders[pub.String()] = network.MakeKeySignatureProvider(privateKey.String())
 	done := make(chan bool)
-	node.Start(true)
+	node.Start(false)
+	node.BlockChain.SetProposedProducers(producers)
 	<- done
 }

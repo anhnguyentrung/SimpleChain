@@ -16,6 +16,8 @@ func marshalBinary(v interface{}) ([]byte, error) {
 			return encoder.WriteByte(byte(cv))
 		case GoAwayReason:
 			return encoder.WriteByte(byte(cv))
+		case IdListModes:
+			return encoder.WriteByte(byte(cv))
 		default:
 			rv := reflect.Indirect(reflect.ValueOf(v))
 			t := rv.Type()

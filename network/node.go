@@ -154,6 +154,7 @@ type Node struct {
 	BlockChain *database.BlockChain
 	LocalTrxs []NodeTransactionState
 	Producer *ProducerManager
+	ReceivedBlockQueue []chain.SignedBlock
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -169,6 +170,7 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 		BlockChain: database.NewBlockChain(),
 		Producer: NewProducerManager(),
 		Dispatcher: &DispatchManager{},
+		SyncManager: NewSyncManager(SyncReqSpan),
 		UserAgentName: "",
 	}
 }
@@ -219,6 +221,7 @@ func (node *Node) ListenFromPeers() error {
 func (node *Node) handleMessage(c *Connection, packet *Packet) {
 	switch msg := packet.message.Content.(type) {
 	case HandshakeMessage:
+		fmt.Println("handshake")
 		c.LastHandshakeReceived = msg
 		node.handleHandshakeMessage(c, msg)
 	case ChainSizeMessage:
@@ -226,8 +229,10 @@ func (node *Node) handleMessage(c *Connection, packet *Packet) {
 		node.handleGoAwayMessage(c, msg)
 	case TimeMessage:
 	case NoticeMessage:
+		fmt.Println("notice")
 		node.handleNotice(c, msg)
 	case RequestMessage:
+		fmt.Println("request")
 		node.handleRequest(c, msg)
 	case SyncRequestMessage:
 		node.handleSyncRequest(c, msg)
@@ -269,110 +274,111 @@ func (node *Node) handleGoAwayMessage(c *Connection, message GoAwayMessage) {
 }
 
 func (node *Node) handleHandshakeMessage(c *Connection, message HandshakeMessage) {
-	fmt.Println("received handshake message", message.ChainId)
+	//fmt.Println("received handshake message", message.ChainId)
 	if !isValidHandshakeMessage(message) {
 		fmt.Println("bad handshake message")
-		c.sendGoAwayMessage(Fatal_Other)
+		//c.sendGoAwayMessage(Fatal_Other)
 		return
 	}
-	//libNum := node.BlockChain.LastIrreversibleBlockNum()
-	//peerLib := message.LastIrreversibleBlockNum
-	//if !c.Connected {
-	//	c.Connected = true
-	//}
-	//if message.Generation == 1 {
-	//	if message.NodeId == node.NodeId {
-	//		c.sendGoAwayMessage(Self)
-	//		return
-	//	}
-	//	if c.PeerAddress == "" || c.LastHandshakeReceived.NodeId == sha256.Sum256([]byte("")) {
-	//		fmt.Println("checking for duplicate")
-	//		for _, check := range node.Conns {
-	//			if check == c {
-	//				continue
-	//			}
-	//			if check.Connected && check.PeerAddress == message.P2PAddress {
-	//				if message.Time.UnixNano() + c.LastHandshakeSent.Time.UnixNano()  <= check.LastHandshakeSent.Time.UnixNano() + check.LastHandshakeReceived.Time.UnixNano() {
-	//					continue
-	//				}
-	//				c.sendGoAwayMessage(Duplicate)
-	//				return
-	//			}
-	//		}
-	//	} else {
-	//		fmt.Println("skipping duplicate check")
-	//	}
-	//	if message.ChainId != node.ChainId {
-	//		fmt.Println("Peer on a different chain. Closing connection")
-	//		c.sendGoAwayMessage(Wrong_Chain)
-	//		return
-	//	}
-	//	c.NetworkVersion = message.NetworkVersion
-	//	if c.NetworkVersion != node.NetworkVersion {
-	//		if node.NetworkVersionMatch {
-	//			fmt.Println("Peer network version does not match")
-	//			c.sendGoAwayMessage(Wrong_Version)
-	//			return
-	//		} else {
-	//			fmt.Printf("Local network version %d, remote network version %d\n", node.NetworkVersion, c.NetworkVersion)
-	//
-	//		}
-	//	}
-	//	if c.NodeId !=  message.NodeId {
-	//		c.NodeId = message.NodeId
-	//	}
-	//	if !node.authenticatePeer(message) {
-	//		fmt.Println("Peer not authenticated")
-	//		c.sendGoAwayMessage(Authentication)
-	//		return
-	//	}
-	//	onFork := false
-	//	if peerLib <= libNum && peerLib > 0 {
-	//		peerLibId := node.BlockChain.GetBlockIdForNum(peerLib)
-	//		onFork = (message.LastIrreversibleBlockId != peerLibId)
-	//		if onFork {
-	//			c.sendGoAwayMessage(Forked)
-	//			return
-	//		}
-	//	}
-	//	if c.SendHandshakeCount == 0 {
-	//		node.sendHandshake(c)
-	//
-	//	}
-	//}
+	libNum := node.BlockChain.LastIrreversibleBlockNum()
+	peerLib := message.LastIrreversibleBlockNum
+	if !c.Connected {
+		c.Connected = true
+	}
+	if message.Generation == 1 {
+		if message.NodeId == node.NodeId {
+			//c.sendGoAwayMessage(Self)
+			fmt.Println("send to self")
+			return
+		}
+		if c.PeerAddress == "" || c.LastHandshakeReceived.NodeId == sha256.Sum256([]byte("")) {
+			fmt.Println("checking for duplicate")
+			for _, check := range node.Conns {
+				if check == c {
+					continue
+				}
+				if check.Connected && check.PeerAddress == message.P2PAddress {
+					if message.Time.UnixNano() + c.LastHandshakeSent.Time.UnixNano()  <= check.LastHandshakeSent.Time.UnixNano() + check.LastHandshakeReceived.Time.UnixNano() {
+						continue
+					}
+					fmt.Println("Duplicate")
+					//c.sendGoAwayMessage(Duplicate)
+					return
+				}
+			}
+		} else {
+			fmt.Println("skipping duplicate check")
+		}
+		if message.ChainId != node.ChainId {
+			fmt.Println("Peer on a different chain. Closing connection")
+			//c.sendGoAwayMessage(Wrong_Chain)
+			return
+		}
+		c.NetworkVersion = message.NetworkVersion
+		if c.NetworkVersion != node.NetworkVersion {
+			if node.NetworkVersionMatch {
+				fmt.Println("Peer network version does not match")
+				//c.sendGoAwayMessage(Wrong_Version)
+				return
+			} else {
+				fmt.Printf("Local network version %d, remote network version %d\n", node.NetworkVersion, c.NetworkVersion)
+
+			}
+		}
+		if c.NodeId !=  message.NodeId {
+			c.NodeId = message.NodeId
+		}
+		if !node.authenticatePeer(message) {
+			fmt.Println("Peer not authenticated")
+			//c.sendGoAwayMessage(Authentication)
+			return
+		}
+		onFork := false
+		if peerLib <= libNum && peerLib > 0 {
+			peerLibId := node.BlockChain.GetBlockIdForNum(peerLib)
+			onFork = (message.LastIrreversibleBlockId != peerLibId)
+			if onFork {
+				//c.sendGoAwayMessage(Forked)
+				return
+			}
+		}
+		if c.SendHandshakeCount == 0 {
+			fmt.Println("send handshake when handshake count equals zero")
+			node.sendHandshake(c)
+		}
+	}
 	c.LastHandshakeReceived = message
 	node.SyncManager.ReceiveHanshake(message, c, node)
 }
 
 func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
-	c.Connected = true
 	req:= RequestMessage{}
 	sendReq := false
-	switch message.KnownTrx.Mode {
-	case None:
-		break
-	case Last_Irr_Catch_Up:
-		c.LastHandshakeReceived.HeadNum = message.KnownTrx.Pending
-		req.ReqTrx.Mode = None
-	case Catch_Up:
-		if message.KnownTrx.Pending > 0 {
-			req.ReqTrx.Mode = Catch_Up
-			sendReq = true
-			knownSum := len(node.LocalTrxs)
-			if knownSum > 0 {
-				for _, trx := range node.LocalTrxs {
-					req.ReqTrx.Ids = append(req.ReqTrx.Ids, trx.Id)
-				}
-			}
-		}
-	case Normal:
-		node.Dispatcher.receiveNotice(c, node, message, false)
-	}
+	//switch message.KnownTrx.Mode {
+	//case None:
+	//	break
+	//case Last_Irr_Catch_Up:
+	//	c.LastHandshakeReceived.HeadNum = message.KnownTrx.Pending
+	//	req.ReqTrx.Mode = None
+	//case Catch_Up:
+	//	if message.KnownTrx.Pending > 0 {
+	//		req.ReqTrx.Mode = Catch_Up
+	//		sendReq = true
+	//		knownSum := len(node.LocalTrxs)
+	//		if knownSum > 0 {
+	//			for _, trx := range node.LocalTrxs {
+	//				req.ReqTrx.Ids = append(req.ReqTrx.Ids, trx.Id)
+	//			}
+	//		}
+	//	}
+	//case Normal:
+	//	node.Dispatcher.receiveNotice(c, node, message, false)
+	//}
 	switch message.KnownBlocks.Mode {
-	case None:
-		if message.KnownTrx.Mode != Normal {
-			return
-		}
+	//case None:
+	//	if message.KnownTrx.Mode != Normal {
+	//		return
+	//	}
 	case Catch_Up, Last_Irr_Catch_Up:
 		node.SyncManager.receiveNotice(c, node, message)
 	case Normal:
@@ -381,19 +387,20 @@ func (node *Node) handleNotice(c *Connection, message NoticeMessage) {
 		break
 	}
 	if sendReq {
-		content, _ := marshalBinary(req)
+		fmt.Println("send request ", req)
 		msg := Message{
 			Header: MessageHeader{
 				Type:Request,
 				Length:0,
 			},
-			Content:content,
+			Content:req,
 		}
 		c.sendMessage(msg)
 	}
 }
 
 func (node *Node) handleRequest(c *Connection, message RequestMessage) {
+	fmt.Println("receive request ", message)
 	switch message.ReqBlocks.Mode {
 	case Catch_Up:
 		fmt.Println("Received request message: catch up")
@@ -405,18 +412,18 @@ func (node *Node) handleRequest(c *Connection, message RequestMessage) {
 		break
 	}
 
-	switch message.ReqTrx.Mode {
-	case Catch_Up:
-		node.transactionSendPending(c, message.ReqTrx.Ids)
-	case Normal:
-		node.transactionSend(c, message.ReqTrx.Ids)
-	case None:
-		if message.ReqBlocks.Mode == None {
-			c.Syncing = false
-		}
-	default:
-		break
-	}
+	//switch message.ReqTrx.Mode {
+	//case Catch_Up:
+	//	node.transactionSendPending(c, message.ReqTrx.Ids)
+	//case Normal:
+	//	node.transactionSend(c, message.ReqTrx.Ids)
+	//case None:
+	//	if message.ReqBlocks.Mode == None {
+	//		c.Syncing = false
+	//	}
+	//default:
+	//	break
+	//}
 }
 
 func (node *Node) handleSyncRequest(c *Connection, message SyncRequestMessage) {
@@ -457,52 +464,74 @@ func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock
 	fmt.Println("receive block ", blockNum)
 	if blockchain.FetchBlockById(blockId) != nil {
 		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
+		return
 	}
 	node.Dispatcher.receiveBlock(c, blockId, blockNum)
-	// confirm block and sync with local database
-	node.Producer.onIncomingBlock(&signedBlock, node)
-	node.SyncManager.receiveBlock(c, node, blockId, blockNum)
-}
-
-func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
-	for _, tx := range node.LocalTrxs {
-		if tx.BlockNum == 0 {
-			found := false
-			for _, known := range ids {
-				if known == tx.Id {
-					found = true
-					break
-				}
-			}
-			if !found {
-				msg := Message{
-					Header: MessageHeader{
-						Type:PackedTransaction,
-						Length:0,
-					},
-					Content:tx.PackedTrx,
-				}
-				c.sendMessage(msg)
-			}
+	//push incoming block to queue or confirm block and sync with local database
+	if signedBlock.BlockNum() == blockchain.Head.BlockNum + 1 {
+		node.Producer.onIncomingBlock(&signedBlock, node)
+		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
+	} else {
+		node.ReceivedBlockQueue = append(node.ReceivedBlockQueue, signedBlock)
+		for dequeueBlock := node.dequeueBlockNum(blockchain.Head.BlockNum + 1); dequeueBlock != nil; {
+			node.Producer.onIncomingBlock(dequeueBlock, node)
+			node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 		}
+
 	}
 }
 
-func (node *Node) transactionSend(c *Connection, ids []chain.SHA256Type) {
-	for _, id := range ids {
-		tx := node.findLocalTrx(id)
-		if tx != nil {
-			msg := Message{
-				Header: MessageHeader{
-					Type:PackedTransaction,
-					Length:0,
-				},
-				Content:tx.PackedTrx,
-			}
-			c.sendMessage(msg)
+func (node *Node) dequeueBlockNum(blockNum uint32) *chain.SignedBlock {
+	var result *chain.SignedBlock = nil
+	for i, b := range node.ReceivedBlockQueue {
+		if b.BlockNum() == blockNum {
+			result = &b
+			node.ReceivedBlockQueue = append(node.ReceivedBlockQueue[:i], node.ReceivedBlockQueue[i+1:]...)
+			break
 		}
 	}
+	return result
 }
+
+//func (node *Node) transactionSendPending(c *Connection, ids []chain.SHA256Type) {
+//	for _, tx := range node.LocalTrxs {
+//		if tx.BlockNum == 0 {
+//			found := false
+//			for _, known := range ids {
+//				if known == tx.Id {
+//					found = true
+//					break
+//				}
+//			}
+//			if !found {
+//				msg := Message{
+//					Header: MessageHeader{
+//						Type:PackedTransaction,
+//						Length:0,
+//					},
+//					Content:tx.PackedTrx,
+//				}
+//				c.sendMessage(msg)
+//			}
+//		}
+//	}
+//}
+//
+//func (node *Node) transactionSend(c *Connection, ids []chain.SHA256Type) {
+//	for _, id := range ids {
+//		tx := node.findLocalTrx(id)
+//		if tx != nil {
+//			msg := Message{
+//				Header: MessageHeader{
+//					Type:PackedTransaction,
+//					Length:0,
+//				},
+//				Content:tx.PackedTrx,
+//			}
+//			c.sendMessage(msg)
+//		}
+//	}
+//}
 
 func (node *Node) blockSend(c *Connection, ids []chain.SHA256Type) {
 	blockchain := node.BlockChain
@@ -571,6 +600,7 @@ func (node *Node) blockSendBranch(c *Connection) {
 		last := bStack[len(bStack)-1]
 		if bytes.Equal(last.Previous[:], libId[:]) {
 			for len(bStack) > 0 {
+				//fmt.Println("requested block num: ", bStack[len(bStack)-1].BlockNum())
 				msg := Message{
 					Header: MessageHeader{
 						Type:SignedBlock,
@@ -602,10 +632,12 @@ func (node *Node) authenticatePeer(message HandshakeMessage) bool {
 	producer := NewProducerManager()
 	foundProducerKey := producer.isProducerKey(message.Key)
 	if pub == nil && priv == nil && !foundProducerKey {
+		fmt.Println("not found key")
 		return false
 	}
-	now := time.Now().Unix()
-	if now - message.Time.Unix() > PeerAuthenticationInterval {
+	now := time.Now().UnixNano()
+	if now - message.Time.UnixNano() > PeerAuthenticationInterval * int64(time.Second) {
+		fmt.Println("expiration")
 		return false
 	}
 	emptySig := make([]byte, 65, 65)
@@ -718,7 +750,7 @@ func (node *Node) addConnection(c *Connection) {
 		node.addNewInbound(c)
 	} else {
 		node.addNewOutbound(c)
-		//node.sendHandshake(c)
+		node.sendHandshake(c)
 	}
 	c.Connected = true
 }
@@ -851,7 +883,7 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 	fmt.Println("send time ", currentTime.UnixNano())
 	bytesOfTimestamp, _ := marshalBinary(currentTime)
 	token := sha256.Sum256(bytesOfTimestamp)
-	return HandshakeMessage{
+	handshakeMsg := HandshakeMessage{
 		NetworkVersion: node.NetworkVersion,
 		ChainId: node.ChainId,
 		NodeId: node.NodeId,
@@ -860,18 +892,26 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 		Token: token,
 		Sig: node.SignCompact(publicKey, token),
 		P2PAddress: node.P2PAddress,
-		LastIrreversibleBlockNum: 0,
+		LastIrreversibleBlockNum: node.BlockChain.LastIrreversibleBlockNum(),
 		LastIrreversibleBlockId: sha256.Sum256([]byte("")),
-		HeadNum: 0,
+		HeadNum: node.BlockChain.Head.BlockNum,
 		HeadId: sha256.Sum256([]byte("")),
 		OS: runtime.GOOS,
 		Agent: node.UserAgentName,
-		Generation: int16(1),
 	}
+	if handshakeMsg.LastIrreversibleBlockNum != 0 {
+		handshakeMsg.LastIrreversibleBlockId = node.BlockChain.GetBlockIdForNum(handshakeMsg.LastIrreversibleBlockNum)
+	}
+	if handshakeMsg.HeadNum != 0 {
+		handshakeMsg.HeadId = node.BlockChain.GetBlockIdForNum(handshakeMsg.HeadNum)
+	}
+	return handshakeMsg
 }
 
 func (node *Node) sendHandshake(c *Connection) (err error) {
 	handshakeMsg := node.newHandshakeMessage()
+	c.SendHandshakeCount += 1
+	handshakeMsg.Generation = c.SendHandshakeCount
 	c.LastHandshakeSent = handshakeMsg
 	msg := Message{
 		Header: MessageHeader{
@@ -880,7 +920,7 @@ func (node *Node) sendHandshake(c *Connection) (err error) {
 		},
 		Content:handshakeMsg,
 	}
-	fmt.Println("sending handshake ", handshakeMsg.LastIrreversibleBlockNum, handshakeMsg.HeadNum)
+	//fmt.Println("sending handshake ", handshakeMsg.LastIrreversibleBlockNum, handshakeMsg.HeadNum)
 	err = c.sendMessage(msg)
 	if err != nil {
 		fmt.Println("error occurred when sending message ", err)
@@ -910,6 +950,7 @@ func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
 
 func (node *Node) acceptedBlock(block *chain.BlockState) {
 	fmt.Println("accepted block ", block.BlockNum)
+	//node.Producer.onBlock(block)
 	node.Dispatcher.broadcastBlock(block.Block, node)
 }
 

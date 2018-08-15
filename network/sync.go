@@ -71,42 +71,45 @@ func (sm *SyncManager) isActive(c *Connection, node *Node) bool {
 }
 
 func (sm *SyncManager) requestNextChunk(c *Connection, node *Node) {
+	fmt.Println("request next chunk")
 	headBlock := node.BlockChain.ForkDatabase.Head.BlockNum
-	if headBlock < sm.syncLastRequestedNum && (sm.source != nil) && sm.source.Current() {
+	//if headBlock < sm.syncLastRequestedNum && (sm.source != nil) && sm.source.Current() {
+	if headBlock < sm.syncLastRequestedNum && c.Current() {
 		return
 	}
-	if c.Current() {
-		sm.source = c
-	} else {
-		if len(node.Conns) == 1 {
-			if sm.source == nil {
-				for k := range node.Conns {
-					sm.source = node.Conns[k]
-					break
-				}
-			}
-		} else {
-			if sm.source != nil {
-				foundSource := false
-				for _, conn := range node.Conns {
-					if conn == sm.source {
-						foundSource = true
-						break
-					}
-				}
-				if !foundSource {
-					for _, conn := range node.Conns {
-						if conn.Current() {
-							sm.source = conn
-							break
-						}
-					}
-				}
-			}
-		}
-	}
+	//if c.Current() {
+	//	sm.source = c
+	//} else {
+	//	if len(node.Conns) == 1 {
+	//		if sm.source == nil {
+	//			for k := range node.Conns {
+	//				sm.source = node.Conns[k]
+	//				break
+	//			}
+	//		}
+	//	} else {
+	//		if sm.source != nil {
+	//			foundSource := false
+	//			for _, conn := range node.Conns {
+	//				if conn == sm.source {
+	//					foundSource = true
+	//					break
+	//				}
+	//			}
+	//			if !foundSource {
+	//				for _, conn := range node.Conns {
+	//					if conn.Current() {
+	//						sm.source = conn
+	//						break
+	//					}
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
 
-	if sm.source == nil || !sm.source.Current() {
+	//if sm.source == nil || !sm.source.Current() {
+	if !c.Current() {
 		fmt.Println("Unable to continue syncing at this time")
 		sm.syncKnownLibNum = node.BlockChain.LastIrreversibleBlockNum()
 		sm.syncLastRequestedNum = 0
@@ -143,17 +146,18 @@ func (sm *SyncManager) requestSyncBlocks(c *Connection, start, end uint32) {
 }
 
 func (sm *SyncManager) resetLibNum(c *Connection, node *Node) {
-	if sm.state == In_Sync {
-		sm.source = nil
-	}
+	//if sm.state == In_Sync {
+	//	sm.source = nil
+	//}
 	if c.Current() {
 		if c.LastHandshakeReceived.LastIrreversibleBlockNum > sm.syncKnownLibNum {
 			sm.syncKnownLibNum = c.LastHandshakeReceived.LastIrreversibleBlockNum
 		}
-	} else if c == sm.source {
-		sm.syncLastRequestedNum = 0
-		sm.requestNextChunk(c, node)
 	}
+	//else if c == sm.source {
+	//	sm.syncLastRequestedNum = 0
+	//	sm.requestNextChunk(c, node)
+	//}
 }
 
 func (sm *SyncManager) syncRequired(node *Node) bool {
@@ -187,6 +191,7 @@ func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id c
 		c.ForkHead = id
 		c.ForkHeadNum = num
 		if sm.state == Lib_Catchup {
+			fmt.Println("sync state: lib catchup")
 			return
 		}
 		sm.setState(Head_Catchup)
@@ -194,14 +199,14 @@ func (sm *SyncManager) verifyCatchup(c *Connection, node *Node, num uint32, id c
 		c.ForkHead = chain.SHA256Type{}
 		c.ForkHeadNum = 0
 	}
-	req.ReqTrx.Mode = None
-	content, _ := marshalBinary(req)
+	//req.ReqTrx.Mode = None
+	fmt.Println("verify catch up request ", req)
 	msg := Message{
 		Header: MessageHeader{
 			Type:Request,
 			Length:0,
 		},
-		Content: content,
+		Content: req,
 	}
 	c.sendMessage(msg)
 }
@@ -214,10 +219,11 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 	head := node.BlockChain.ForkDatabase.Head.BlockNum
 	headId := node.BlockChain.ForkDatabase.Head.Id
 	if bytes.Equal(headId[:], message.HeadId[:]) {
+		fmt.Println("local head id == remote head id")
 		noticeMsg := NoticeMessage{}
 		noticeMsg.KnownBlocks.Mode = None
-		noticeMsg.KnownTrx.Mode = Catch_Up
-		noticeMsg.KnownTrx.Pending = uint32(len(node.LocalTrxs))
+		//noticeMsg.KnownTrx.Mode = Catch_Up
+		//noticeMsg.KnownTrx.Pending = uint32(len(node.LocalTrxs))
 		content, _ := marshalBinary(noticeMsg)
 		msg := Message{
 			Header: MessageHeader{
@@ -230,15 +236,17 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 		return
 	}
 	if head < peerLib {
+		fmt.Println("local head num < remote last irreversable num")
 		sm.startSync(c, node, peerLib)
 		return
 	}
 	if libNum > message.HeadNum {
+		fmt.Println("local last irreversable num > head num")
 		if message.Generation > 1 {
 			noticeMsg := NoticeMessage{}
 			noticeMsg.KnownBlocks.Mode = Last_Irr_Catch_Up
-			noticeMsg.KnownTrx.Mode = Last_Irr_Catch_Up
-			noticeMsg.KnownTrx.Pending = libNum
+			//noticeMsg.KnownTrx.Mode = Last_Irr_Catch_Up
+			//noticeMsg.KnownTrx.Pending = libNum
 			noticeMsg.KnownBlocks.Pending = head
 			content, _ := marshalBinary(noticeMsg)
 			msg := Message{
@@ -253,15 +261,17 @@ func (sm *SyncManager) ReceiveHanshake(message HandshakeMessage, c *Connection, 
 		}
 	}
 	if head <= message.HeadNum {
+		fmt.Println("local head num <= remote head num ", message.HeadNum)
 		sm.verifyCatchup(c, node, message.HeadNum, message.HeadId)
 		return
 	} else {
+		fmt.Println("synced")
 		if message.Generation > 1 {
 			noticeMsg := NoticeMessage{}
-			noticeMsg.KnownTrx.Mode = None
+			//noticeMsg.KnownTrx.Mode = None
 			noticeMsg.KnownBlocks.Mode = Catch_Up
 			noticeMsg.KnownBlocks.Pending = head
-			noticeMsg.KnownTrx.Ids = append(noticeMsg.KnownTrx.Ids, headId)
+			//noticeMsg.KnownTrx.Ids = append(noticeMsg.KnownTrx.Ids, headId)
 			content, _ := marshalBinary(noticeMsg)
 			msg := Message{
 				Header: MessageHeader{
@@ -286,43 +296,43 @@ func (sm *SyncManager) receiveNotice(c *Connection, node *Node, message NoticeMe
 			sm.verifyCatchup(c, node, message.KnownBlocks.Pending, message.KnownBlocks.Ids[len(message.KnownBlocks.Ids)-1])
 		}
 	} else {
-		c.LastHandshakeReceived.LastIrreversibleBlockNum = message.KnownTrx.Pending
+		//c.LastHandshakeReceived.LastIrreversibleBlockNum = message.KnownTrx.Pending
 		sm.resetLibNum(c, node)
 		sm.startSync(c, node, message.KnownBlocks.Pending)
 	}
 }
 
 func (sm *SyncManager) receiveBlock(c *Connection, node *Node, blockId chain.SHA256Type, blockNum uint32) {
-	//fmt.Printf("Got block %d from %s\n", blockNum, c.PeerName())
-	//if sm.state == Lib_Catchup {
-	//	if blockNum != sm.syncNextExpectedNum {
-	//		fmt.Println("Expected block num %d but god %d\n", sm.syncNextExpectedNum, blockNum)
-	//		return
-	//	}
-	//	sm.syncNextExpectedNum = blockNum + 1
-	//}
-	//if sm.state == Head_Catchup {
-	//	sm.setState(In_Sync)
-	//	sm.source = nil
-	//	nullId := chain.SHA256Type{}
-	//	for _, connection := range node.Conns {
-	//		if bytes.Equal(nullId[:], connection.ForkHead[:]) {
-	//			continue
-	//		}
-	//		if bytes.Equal(blockId[:], connection.ForkHead[:]) || connection.ForkHeadNum < blockNum {
-	//			connection.ForkHead = nullId
-	//			connection.ForkHeadNum = 0
-	//		} else {
-	//			sm.setState(Head_Catchup)
-	//		}
-	//	}
-	//} else if sm.state == Lib_Catchup {
-	//	if blockNum == sm.syncKnownLibNum {
-	//		sm.setState(In_Sync)
-	//	} else if blockNum == sm.syncLastRequestedNum {
-	//		sm.requestNextChunk(c, node)
-	//	}
-	//}
+	fmt.Printf("Got block %d from %s\n", blockNum, c.PeerName())
+	if sm.state == Lib_Catchup {
+		if blockNum != sm.syncNextExpectedNum {
+			fmt.Printf("Expected block num %d but god %d\n", sm.syncNextExpectedNum, blockNum)
+			return
+		}
+		sm.syncNextExpectedNum = blockNum + 1
+	}
+	if sm.state == Head_Catchup {
+		sm.setState(In_Sync)
+		sm.source = nil
+		nullId := chain.SHA256Type{}
+		for _, connection := range node.Conns {
+			if bytes.Equal(nullId[:], connection.ForkHead[:]) {
+				continue
+			}
+			if bytes.Equal(blockId[:], connection.ForkHead[:]) || connection.ForkHeadNum < blockNum {
+				connection.ForkHead = nullId
+				connection.ForkHeadNum = 0
+			} else {
+				sm.setState(Head_Catchup)
+			}
+		}
+	} else if sm.state == Lib_Catchup {
+		if blockNum == sm.syncKnownLibNum {
+			sm.setState(In_Sync)
+		} else if blockNum == sm.syncLastRequestedNum {
+			sm.requestNextChunk(c, node)
+		}
+	}
 }
 
 func (sm *SyncManager) sendHanshakes(node *Node) {

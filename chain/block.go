@@ -8,6 +8,7 @@ import (
 	"log"
 	bytes2 "bytes"
 	"blockchain/btcsuite/btcd/btcec"
+	"fmt"
 )
 
 type BlockHeader struct {
@@ -85,6 +86,7 @@ func (bhs *BlockHeaderState) GetScheduledProducer(t uint64) ProducerKey  {
 	blockTs.SetTime(t)
 	index := int(blockTs.Slot) % (len(bhs.ActiveSchedule.Producers) * PRODUCER_REPETITION)
 	index /= PRODUCER_REPETITION
+	//fmt.Println("index ",index)
 	return bhs.ActiveSchedule.Producers[index]
 }
 
@@ -130,9 +132,8 @@ func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust boo
 	if signedBlockHeader.Timestamp.ToTime().UnixNano() <= bhs.Header.Timestamp.ToTime().UnixNano() {
 		log.Fatal("block must be later in time")
 	}
-	signedBlockId := signedBlockHeader.Id()
 	bhsId := bhs.Id
-	if !bytes2.Equal(signedBlockId[:], bhsId[:]) {
+	if !bytes2.Equal(signedBlockHeader.Previous[:], bhsId[:]) {
 		log.Fatal("block must be to current state")
 	}
 	nextBhs := bhs.GenerateNext(uint64(signedBlockHeader.Timestamp.ToTime().UnixNano()))
@@ -148,12 +149,17 @@ func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust boo
 		}
 	}
 	nextBhs.SetConfirmed(signedBlockHeader.Confirmed)
-	//nextBhs.MaybePromotePending()
+	nextBhs.MaybePromotePending()
+	if len(signedBlockHeader.NewProducer.Producers) > 0 {
+		nextBhs.SetNewProducer(signedBlockHeader.NewProducer)
+	}
 	nextBhs.Header.ProducerSignature = signedBlockHeader.ProducerSignature
 	nextBhs.Id = nextBhs.Header.Id()
 	if !trust {
+		fmt.Println("block signing key ", nextBhs.BlockSigningKey.String())
+		fmt.Println("public key ", nextBhs.pubKey().String())
 		if !bytes2.Equal(nextBhs.BlockSigningKey.Content, nextBhs.pubKey().Content) {
-			log.Fatal("block is signed by wrong key")
+			log.Fatal("block is signed by wrong key ", signedBlockHeader.BlockNum())
 		}
 	}
 	return nextBhs
@@ -222,7 +228,7 @@ func (bhs *BlockHeaderState) MaybePromotePending() bool {
 				newProducerToLastImpliedIRB[pro.ProducerName] = bhs.DPOSIrreversibleBlockNum
 			}
 		}
-		bhs.ProducerToLastProduced = newProducerToLastImpliedIRB
+		bhs.ProducerToLastProduced = newProducerToLastProduced
 		bhs.ProducerToLastImpliedIRB = newProducerToLastImpliedIRB
 		bhs.ProducerToLastProduced[bhs.Header.Producer] = bhs.BlockNum
 		return true
@@ -251,9 +257,7 @@ func (bhs *BlockHeaderState) Sign(signer SignerCallBack) {
 }
 
 func (bhs *BlockHeaderState) Digest() SHA256Type {
-	headerDigest := bhs.Header.Digest()
-	pair := Pair{First: headerDigest, Second: bhs.PendingScheduleHash}
-	buf, _ := MarshalBinary(pair)
+	buf, _ := MarshalBinary(bhs.Header)
 	return sha256.Sum256(buf)
 }
 

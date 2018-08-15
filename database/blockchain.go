@@ -77,7 +77,8 @@ func (bc *BlockChain) initializeForkDatabase() {
 	bc.Head.Block = &chain.SignedBlock{}
 	bc.Head.Block.SignedBlockHeader = genHeader.Header
 	bc.ForkDatabase = ForkDatabase{}
-	bc.ForkDatabase.BlockStates = []*chain.BlockState{bc.Head}
+	bc.ForkDatabase.BlockStates = []*chain.BlockState{}
+	bc.ForkDatabase.Add(bc.Head)
 	bc.initializeDatabase()
 }
 
@@ -123,9 +124,11 @@ func (bc *BlockChain) FetchBlockById(id chain.SHA256Type) *chain.SignedBlock {
 		return state.Block
 	}
 	block := bc.FetchBlockByNum(chain.NumFromId(id))
-	blockId := block.Id()
-	if block != nil && bytes2.Equal(blockId[:], id[:]) {
-		return block
+	if block != nil {
+		blockId := block.Id()
+		if bytes2.Equal(blockId[:], id[:]) {
+			return block
+		}
 	}
 	return nil
 }
@@ -150,7 +153,7 @@ func (bc *BlockChain) AbortBlock() {
 
 func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.BlockStatus) {
 	if bc.Pending == nil {
-		log.Fatal("pending block should be not nil")
+		bc.Pending = &PendingState{}
 	}
 	// generate pending block
 	bc.Pending.BlockStatus = s
@@ -159,16 +162,17 @@ func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.
 	//fmt.Println("next block id: ", bc.Pending.PendingBlockState.BlockNum)
 	bc.Pending.PendingBlockState.InCurrentChain = true
 	bc.Pending.PendingBlockState.SetConfirmed(confirmBlockCount)
-	wasPendingPromoted := bc.Pending.PendingBlockState.MaybePromotePending()
-	gpo := bc.DB.GPO
-	if gpo.ProposedScheduleBlockNum != nil &&
-		*gpo.ProposedScheduleBlockNum <= bc.Pending.PendingBlockState.DPOSIrreversibleBlockNum &&
-		len(bc.Pending.PendingBlockState.PendingSchedule.Producers) == 0 &&
-		!wasPendingPromoted {
-			bc.Pending.PendingBlockState.SetNewProducer(gpo.ProposedSchedule.ProducerSchedulerType())
-			bc.DB.GPO.ProposedSchedule = nil
-			bc.DB.GPO.ProposedScheduleBlockNum = nil
-	}
+	bc.Pending.PendingBlockState.MaybePromotePending()
+	//gpo := bc.DB.GPO
+	//if gpo.ProposedScheduleBlockNum != nil &&
+	//	*gpo.ProposedScheduleBlockNum <= bc.Pending.PendingBlockState.DPOSIrreversibleBlockNum &&
+	//	len(bc.Pending.PendingBlockState.PendingSchedule.Producers) == 0 &&
+	//	!wasPendingPromoted {
+	//		bc.Pending.PendingBlockState.SetNewProducer(*gpo.ProposedSchedule)
+	//		bc.DB.GPO.ProposedSchedule = nil
+	//		bc.DB.GPO.ProposedScheduleBlockNum = nil
+	//}
+	fmt.Println("start block: producers ", bc.Pending.PendingBlockState.GetScheduledProducer(when).ProducerName)
 	// remove expired transaction in database
 	bc.ClearExpiredInputTransaction()
 }
@@ -243,9 +247,11 @@ func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chai
 		log.Fatal("invalid block status")
 	}
 	trust := (blockStatus == chain.Irreversible || blockStatus == chain.Validated)
-	newBlockState := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
-	fmt.Println("accepted block ", newBlockState.BlockNum)
-	bc.switchForks(blockStatus, acceptedBlock)
+	newBlockState, _ := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
+	if newBlockState != nil {
+		fmt.Println("accepted block ", newBlockState.BlockNum)
+		bc.switchForks(blockStatus, acceptedBlock)
+	}
 }
 
 func (bc *BlockChain) switchForks(blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
@@ -311,4 +317,53 @@ func (bc *BlockChain) popBlock() {
 	}
 	// assign previous block to head
 	bc.Head = previousBlock
+}
+
+func compareTwoProducers(p1 []chain.ProducerKey, p2 []chain.ProducerKey) bool {
+	if len(p1) != len(p2) {
+		return false
+	}
+	for i, v := range p1 {
+		if v.ProducerName != p2[i].ProducerName {
+			return false
+		}
+		if v.BlockSigningKey.String() != p2[i].BlockSigningKey.String() {
+			return false
+		}
+	}
+	return true
+}
+
+func (bc *BlockChain) SetProposedProducers(producers []chain.ProducerKey) int64 {
+	gpo := bc.DB.GPO
+	currentBlockNum := bc.Head.BlockNum + 1
+	if gpo.ProposedScheduleBlockNum != nil {
+		if *gpo.ProposedScheduleBlockNum != currentBlockNum {
+			fmt.Println("there is already proposed producer schedule in previous block, wait for it to become pending")
+			return -1
+		}
+		if compareTwoProducers(producers, gpo.ProposedSchedule.Producers) {
+			fmt.Println("the proposed producer schedule does not change")
+			return -1
+		}
+	}
+	var schedule *chain.ProducerScheduleType = nil
+	if len(bc.Pending.PendingBlockState.PendingSchedule.Producers) == 0 {
+		schedule = &bc.Pending.PendingBlockState.ActiveSchedule
+		//schedule.Producers = schedule.Producers
+		schedule.Version = schedule.Version + 1
+	} else {
+		schedule = &bc.Pending.PendingBlockState.PendingSchedule
+		//schedule.Producers = schedule.Producers
+		schedule.Version = schedule.Version + 1
+	}
+	if compareTwoProducers(producers, schedule.Producers) {
+		fmt.Println("the proposed producer schedule does not change")
+		return -1
+	}
+	schedule.Producers = producers
+	version := schedule.Version
+	gpo.ProposedScheduleBlockNum = &currentBlockNum
+	gpo.ProposedSchedule = schedule
+	return int64(version)
 }

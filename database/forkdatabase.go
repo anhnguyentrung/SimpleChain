@@ -4,6 +4,7 @@ import (
 	"blockchain/chain"
 	"bytes"
 	"log"
+	"fmt"
 )
 
 type ForkDatabase struct {
@@ -35,22 +36,27 @@ func (fb *ForkDatabase) Add(bs *chain.BlockState) *chain.BlockState {
 	return bs
 }
 
-func (fb *ForkDatabase) AddSignedBlock(signedBlock *chain.SignedBlock, trust bool) *chain.BlockState {
+func (fb *ForkDatabase) AddSignedBlock(signedBlock *chain.SignedBlock, trust bool) (*chain.BlockState, error) {
+	fmt.Println("add signed block ", signedBlock.BlockNum())
 	if signedBlock == nil {
-		log.Fatal("block must not be nil")
+		fmt.Println("block must not be nil")
+		return nil, fmt.Errorf("block must not be nil")
 	}
 	if fb.Head == nil {
-		log.Fatal("no head block")
+		fmt.Println("no head block")
+		return nil, fmt.Errorf("no head block")
 	}
 	if fb.GetBlock(signedBlock.Id()) != nil {
-		log.Fatal("this block existed in database")
+		fmt.Println("this block existed in database")
+		return nil, fmt.Errorf("this block existed in database")
 	}
 	previousBlock := fb.GetBlock(signedBlock.Previous)
 	if previousBlock == nil {
-		log.Fatal("unlinkable block")
+		fmt.Println("unlinkable block ", signedBlock.BlockNum())
+		return nil, fmt.Errorf("unlinkable block")
 	}
 	blockState := chain.NewBlockStateFromSignedBlock(&previousBlock.BlockHeaderState, signedBlock, trust)
-	return fb.Add(blockState)
+	return fb.Add(blockState), nil
 }
 
 func (fb *ForkDatabase) MarkInCurrentChain(blockState *chain.BlockState, inCurrentChain bool) {

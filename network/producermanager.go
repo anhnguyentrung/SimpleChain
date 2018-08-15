@@ -34,9 +34,9 @@ type ProducerManager struct {
 
 func NewProducerManager() *ProducerManager {
 	pm := ProducerManager{}
-	pm.Producers = []chain.AccountName{chain.DEFAULT_PRODUCER_NAME}
+	//pm.Producers = []chain.AccountName{chain.DEFAULT_PRODUCER_NAME}
 	pm.SignatureProviders = make(map[string]SignatureProviderType, 0)
-	pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = makeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
+	//pm.SignatureProviders[chain.DEFAULT_PUBLIC_KEY] = MakeKeySignatureProvider(chain.DEFAULT_PRIVATE_KEY)
 	pm.timer = time.NewTimer(time.Duration(maxTime().UnixNano()))
 	pm.ProducerWaterMarks = make(map[chain.AccountName]uint32, 0)
 	pm.startTime = time.Now()
@@ -44,7 +44,7 @@ func NewProducerManager() *ProducerManager {
 	return &pm
 }
 
-func makeKeySignatureProvider(wif string) SignatureProviderType {
+func MakeKeySignatureProvider(wif string) SignatureProviderType {
 	priv, _ := crypto.NewPrivateKey(wif)
 	return func(hash chain.SHA256Type) crypto.Signature {
 		sig, _ := priv.Sign(hash[:])
@@ -69,7 +69,7 @@ func (pm *ProducerManager) Startup(node *Node) {
 		pm.IrreversibleBlockTime = maxTime()
 	}
 	if len(pm.Producers) > 0 {
-		fmt.Printf("launching block production for %d producer at %s", len(pm.Producers), time.Now().String())
+		fmt.Printf("launching block production for %d producer at %s\n", len(pm.Producers), time.Now().String())
 	}
 	pm.scheduleProductionLoop(node)
 }
@@ -86,7 +86,7 @@ func (pm *ProducerManager) scheduleProductionLoop(node *Node) {
 	blockchain := node.BlockChain
 	pm.timer.Stop()
 	result := pm.startBlock(blockchain)
-	defer pm.timer.Stop()
+	//defer pm.timer.Stop()
 	if result == chain.Failed {
 		fmt.Println("Failed to start a pending block, will try again later")
 		pm.timer = time.AfterFunc(chain.BLOCK_INTERVAL_NS/10, func() {
@@ -209,9 +209,11 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	_, hasSP := pm.SignatureProviders[scheduledProducer.BlockSigningKey.String()]
 	_, err := pm.findProducer(scheduledProducer.ProducerName)
 	if err != nil {
+		fmt.Println("could not find producer")
 		pm.PendingBlockMode = Speculating
 	}
 	if !hasSP {
+		fmt.Println("could not find signature provider")
 		pm.PendingBlockMode = Speculating
 	}
 	if pm.PendingBlockMode == Producing {
@@ -231,6 +233,7 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 			}
 		}
 	}
+	blockchain.AbortBlock()
 	blockchain.StartBlock(blockTime, blocksToConfirm, chain.Incomplete)
 	pbs := blockchain.Pending.PendingBlockState
 	if pbs != nil {
@@ -246,14 +249,17 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 func (pm *ProducerManager) produceBlock(node *Node) error {
 	blockchain := node.BlockChain
 	if pm.PendingBlockMode != Producing {
+		fmt.Println("called produce_block while not actually producing")
 		return fmt.Errorf("called produce_block while not actually producing")
 	}
 	pbs := blockchain.Pending.PendingBlockState
 	if pbs == nil {
-		return fmt.Errorf("pending_block_state does not exist but it should, another plugin may have corrupted it")
+		fmt.Println("pending block state does not exist but it should, another plugin may have corrupted it")
+		return fmt.Errorf("pending block state does not exist but it should, another plugin may have corrupted it")
 	}
 	signatureProvider, hasSP := pm.SignatureProviders[pbs.BlockSigningKey.String()]
 	if !hasSP {
+		fmt.Println("Attempting to produce a block for which we don't have the private key")
 		return fmt.Errorf("Attempting to produce a block for which we don't have the private key")
 	}
 	blockchain.FinalizeBlock()

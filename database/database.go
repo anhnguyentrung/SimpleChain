@@ -16,11 +16,6 @@ type TransactionObject struct {
 	Expiration time.Time
 }
 
-type SharedProducerScheduleType struct {
-	Version uint32
-	Producers []chain.ProducerKey
-}
-
 type ReversibleBlockObject struct {
 	BlockNum uint32
 	PackedBlock []byte
@@ -33,18 +28,8 @@ func (rb *ReversibleBlockObject) SetBlock(signedBlock *chain.SignedBlock) {
 
 type GlobalPropertyBlock struct {
 	ProposedScheduleBlockNum *uint32
-	ProposedSchedule *SharedProducerScheduleType
+	ProposedSchedule *chain.ProducerScheduleType
 	Configuation chain.ChainConfig
-}
-
-func (s *SharedProducerScheduleType) ProducerSchedulerType() chain.ProducerScheduleType {
-	result := chain.ProducerScheduleType{}
-	result.Version = s.Version
-	result.Producers = make([]chain.ProducerKey, len(s.Producers))
-	for _, pro := range s.Producers {
-		result.Producers = append(result.Producers, pro)
-	}
-	return result
 }
 
 type Database struct {
