@@ -247,7 +247,18 @@ func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chai
 		log.Fatal("invalid block status")
 	}
 	trust := (blockStatus == chain.Irreversible || blockStatus == chain.Validated)
+	var initialSchedule chain.ProducerScheduleType
+	previousBlock := bc.ForkDatabase.GetBlock(signedBlock.Previous)
+	if previousBlock != nil && previousBlock.BlockHeaderState.BlockNum == 1 {
+		initialSchedule = previousBlock.BlockHeaderState.ActiveSchedule
+		previousBlock.BlockHeaderState.ActiveSchedule = *bc.DB.GPO.ProposedSchedule
+		previousBlock.BlockHeaderState.PendingSchedule = *bc.DB.GPO.ProposedSchedule
+	}
 	newBlockState, _ := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
+	if previousBlock != nil && previousBlock.BlockHeaderState.BlockNum == 1 {
+		previousBlock.BlockHeaderState.ActiveSchedule = initialSchedule
+		previousBlock.BlockHeaderState.PendingSchedule = initialSchedule
+	}
 	if newBlockState != nil {
 		fmt.Println("accepted block ", newBlockState.BlockNum)
 		bc.switchForks(blockStatus, acceptedBlock)

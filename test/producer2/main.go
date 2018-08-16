@@ -39,8 +39,8 @@ func main() {
 	if privateKey.PublicKey().String() != pub.String() {
 		log.Fatal("key is wrong")
 	}
-	producers := []chain.ProducerKey{}
 	node := network.NewNode("0.0.0.0:2001", []string{"localhost:2000"})
+	producers := []chain.ProducerKey{}
 	for index, producerName := range chain.PRODUCER_NAMES {
 		producerPub, _ := crypto.NewPublicKey(chain.PRODUCER_PUBLIC_KEYS[index])
 		producerKey := chain.ProducerKey{
@@ -50,6 +50,7 @@ func main() {
 		producers = append(producers, producerKey)
 		node.AllowPeers = append(node.AllowPeers, producerPub)
 	}
+	node.BlockChain.SetProposedProducers(producers)
 	node.NetworkVersion = 1
 	node.ChainId = node.BlockChain.ChainId
 	random, _ := crypto.NewRandomPrivateKey()
@@ -59,6 +60,5 @@ func main() {
 	node.Producer.SignatureProviders[pub.String()] = network.MakeKeySignatureProvider(privateKey.String())
 	done := make(chan bool)
 	node.Start(false)
-	node.BlockChain.SetProposedProducers(producers)
 	<- done
 }

@@ -8,7 +8,6 @@ import (
 	"log"
 	bytes2 "bytes"
 	"blockchain/btcsuite/btcd/btcec"
-	"fmt"
 )
 
 type BlockHeader struct {
@@ -138,7 +137,7 @@ func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust boo
 	}
 	nextBhs := bhs.GenerateNext(uint64(signedBlockHeader.Timestamp.ToTime().UnixNano()))
 	if nextBhs.Header.Producer != signedBlockHeader.Producer {
-		log.Fatal("wrong producer")
+		log.Fatal("wrong producer ", nextBhs.Header.Producer, signedBlockHeader.Producer)
 	}
 	if nextBhs.Header.ScheducerVersion != signedBlockHeader.ScheducerVersion {
 		log.Fatal("wrong schedule version")
@@ -154,10 +153,11 @@ func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust boo
 		nextBhs.SetNewProducer(signedBlockHeader.NewProducer)
 	}
 	nextBhs.Header.ProducerSignature = signedBlockHeader.ProducerSignature
+	//fmt.Println("receive signature ", nextBhs.Header.ProducerSignature)
 	nextBhs.Id = nextBhs.Header.Id()
 	if !trust {
-		fmt.Println("block signing key ", nextBhs.BlockSigningKey.String())
-		fmt.Println("public key ", nextBhs.pubKey().String())
+		//fmt.Println("block signing key ", nextBhs.BlockSigningKey.String())
+		//fmt.Println("public key ", nextBhs.pubKey().String())
 		if !bytes2.Equal(nextBhs.BlockSigningKey.Content, nextBhs.pubKey().Content) {
 			log.Fatal("block is signed by wrong key ", signedBlockHeader.BlockNum())
 		}
@@ -167,6 +167,7 @@ func (bhs *BlockHeaderState) Next(signedBlockHeader SignedBlockHeader, trust boo
 
 func (bhs *BlockHeaderState) pubKey() crypto.PublicKey {
 	digest := bhs.Digest()
+	//fmt.Println("receive header ", bhs.Header)
 	pub, _, _ := btcec.RecoverCompact(btcec.S256(), bhs.Header.ProducerSignature.Content, digest[:])
 	return crypto.PublicKey{Content:pub.SerializeCompressed()}
 }
@@ -251,13 +252,18 @@ func (bhs *BlockHeaderState) SetNewProducer(pending ProducerScheduleType) {
 }
 
 func (bhs *BlockHeaderState) Sign(signer SignerCallBack) {
+	bhs.Header.ProducerSignature = crypto.Signature{}
 	buf, _ := MarshalBinary(bhs.Header)
 	d := sha256.Sum256(buf)
 	bhs.Header.ProducerSignature = signer(d)
+	//fmt.Println("send header ", bhs.Header)
 }
 
 func (bhs *BlockHeaderState) Digest() SHA256Type {
+	producerSignature := bhs.Header.ProducerSignature
+	bhs.Header.ProducerSignature = crypto.Signature{}
 	buf, _ := MarshalBinary(bhs.Header)
+	bhs.Header.ProducerSignature = producerSignature
 	return sha256.Sum256(buf)
 }
 

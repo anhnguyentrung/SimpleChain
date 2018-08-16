@@ -48,6 +48,7 @@ func MakeKeySignatureProvider(wif string) SignatureProviderType {
 	priv, _ := crypto.NewPrivateKey(wif)
 	return func(hash chain.SHA256Type) crypto.Signature {
 		sig, _ := priv.Sign(hash[:])
+		//fmt.Println("send signature ", sig)
 		return sig
 	}
 }
@@ -193,6 +194,12 @@ func (pm *ProducerManager) findProducer(name chain.AccountName) (chain.AccountNa
 func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.BlockResult {
 	//fmt.Println("start block")
 	headBlockState := blockchain.Head
+	var initialSchedule chain.ProducerScheduleType
+	if headBlockState.BlockNum == 1 {
+		initialSchedule = headBlockState.ActiveSchedule
+		headBlockState.ActiveSchedule = *blockchain.DB.GPO.ProposedSchedule
+		headBlockState.PendingSchedule = *blockchain.DB.GPO.ProposedSchedule
+	}
 	now := uint64(time.Now().UnixNano())
 	headBlockTime := uint64(blockchain.Head.Header.Timestamp.ToTime().UnixNano()) //nanosecond
 	base := utils.MaxUint64(now, headBlockTime)
@@ -235,6 +242,10 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	}
 	blockchain.AbortBlock()
 	blockchain.StartBlock(blockTime, blocksToConfirm, chain.Incomplete)
+	if headBlockState.BlockNum == 1 {
+		headBlockState.ActiveSchedule = initialSchedule
+		headBlockState.PendingSchedule = initialSchedule
+	}
 	pbs := blockchain.Pending.PendingBlockState
 	if pbs != nil {
 		if pm.PendingBlockMode == Producing &&

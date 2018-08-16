@@ -134,6 +134,11 @@ type NodeTransactionState struct{
 	Requests uint32
 }
 
+type SignedBlockWithConnection struct {
+	chain.SignedBlock
+	*Connection
+}
+
 type Node struct {
 	sync.Mutex
 	P2PAddress string
@@ -154,7 +159,7 @@ type Node struct {
 	BlockChain *database.BlockChain
 	LocalTrxs []NodeTransactionState
 	Producer *ProducerManager
-	ReceivedBlockQueue []chain.SignedBlock
+	ReceivedBlockQueue []SignedBlockWithConnection
 }
 
 func NewNode (p2pAddress string, suppliedPeers []string) *Node {
@@ -259,7 +264,7 @@ func isValidHandshakeMessage(message HandshakeMessage) bool {
 	isEmptyHash := bytes.Equal(message.Token[:], emptyHash[:])
 	bytesOfTimestamp, _ := marshalBinary(message.Time)
 	hashOfTimestamp := sha256.Sum256(bytesOfTimestamp)
-	fmt.Println("receive time ", message.Time.UnixNano())
+	//fmt.Println("receive time ", message.Time.UnixNano())
 	if ((!isEmptySig || !isEmptyHash) && (!bytes.Equal(message.Token[:], hashOfTimestamp[:])))    {
 		valid = false
 	}
@@ -461,7 +466,7 @@ func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock
 	blockchain := node.BlockChain
 	blockId := signedBlock.Id()
 	blockNum := signedBlock.BlockNum()
-	fmt.Println("receive block ", blockNum)
+	//fmt.Println("receive block ", blockNum)
 	if blockchain.FetchBlockById(blockId) != nil {
 		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 		return
@@ -472,17 +477,28 @@ func (node *Node) handleSignedBlock(c *Connection, signedBlock chain.SignedBlock
 		node.Producer.onIncomingBlock(&signedBlock, node)
 		node.SyncManager.receiveBlock(c, node, blockId, blockNum)
 	} else {
-		node.ReceivedBlockQueue = append(node.ReceivedBlockQueue, signedBlock)
-		for dequeueBlock := node.dequeueBlockNum(blockchain.Head.BlockNum + 1); dequeueBlock != nil; {
-			node.Producer.onIncomingBlock(dequeueBlock, node)
-			node.SyncManager.receiveBlock(c, node, blockId, blockNum)
-		}
-
+		//fmt.Println("enqueue block ", blockNum)
+		node.ReceivedBlockQueue = append(node.ReceivedBlockQueue, SignedBlockWithConnection{signedBlock, c,})
+		node.handleBlockInQueue()
 	}
 }
 
-func (node *Node) dequeueBlockNum(blockNum uint32) *chain.SignedBlock {
-	var result *chain.SignedBlock = nil
+func (node *Node) handleBlockInQueue() {
+	dequeue := node.dequeueBlockNum(node.BlockChain.Head.BlockNum + 1)
+	if dequeue != nil {
+		node.Producer.onIncomingBlock(&dequeue.SignedBlock, node)
+		blockId := dequeue.SignedBlock.Id()
+		blockNum := dequeue.SignedBlock.BlockNum()
+		//fmt.Println("handle block in queue ", blockNum)
+		node.SyncManager.receiveBlock(dequeue.Connection, node, blockId, blockNum)
+	}
+	if len(node.ReceivedBlockQueue) > 0 {
+		node.handleBlockInQueue()
+	}
+}
+
+func (node *Node) dequeueBlockNum(blockNum uint32) *SignedBlockWithConnection {
+	var result *SignedBlockWithConnection = nil
 	for i, b := range node.ReceivedBlockQueue {
 		if b.BlockNum() == blockNum {
 			result = &b
@@ -804,7 +820,7 @@ func (node *Node) handleConnection(c *Connection) {
 			break
 		}
 		length := binary.LittleEndian.Uint32(lenBuf)
-		fmt.Println("size of recevied message: ", length)
+		//fmt.Println("size of recevied message: ", length)
 		msgData := make([]byte, length, length)
 		n, err := io.ReadFull(r, msgData)
 		if uint32(n) != length {
@@ -880,7 +896,7 @@ func (node *Node) newHandshakeMessage() HandshakeMessage {
 		}
 	}
 	currentTime := time.Now()
-	fmt.Println("send time ", currentTime.UnixNano())
+	//fmt.Println("send time ", currentTime.UnixNano())
 	bytesOfTimestamp, _ := marshalBinary(currentTime)
 	token := sha256.Sum256(bytesOfTimestamp)
 	handshakeMsg := HandshakeMessage{
