@@ -303,7 +303,7 @@ func (sm *SyncManager) receiveNotice(c *Connection, node *Node, message NoticeMe
 }
 
 func (sm *SyncManager) receiveBlock(c *Connection, node *Node, blockId chain.SHA256Type, blockNum uint32) {
-	fmt.Printf("Got block %d from %s\n", blockNum, c.PeerName())
+	fmt.Printf("Got block %d from %s state %s \n", blockNum, c.PeerName(), sm.stageToString(sm.state))
 	if sm.state == Lib_Catchup {
 		if blockNum != sm.syncNextExpectedNum {
 			fmt.Printf("Expected block num %d but god %d\n", sm.syncNextExpectedNum, blockNum)
@@ -329,6 +329,7 @@ func (sm *SyncManager) receiveBlock(c *Connection, node *Node, blockId chain.SHA
 	} else if sm.state == Lib_Catchup {
 		if blockNum == sm.syncKnownLibNum {
 			sm.setState(In_Sync)
+			sm.sendHanshakes(node)
 		} else if blockNum == sm.syncLastRequestedNum {
 			sm.requestNextChunk(c, node)
 		}

@@ -234,9 +234,11 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 	}
 	var blocksToConfirm uint16 = 0
 	if pm.PendingBlockMode == Producing {
+		fmt.Println("watermark: ", currentWaterMark, headBlockState.BlockNum)
 		if hasWaterMark {
 			if currentWaterMark < headBlockState.BlockNum {
 				blocksToConfirm = utils.Min(math.MaxUint16, uint16(headBlockState.BlockNum - currentWaterMark))
+				fmt.Println("calculate blocks to confirm ", blocksToConfirm)
 			}
 		}
 	}
@@ -259,6 +261,7 @@ func (pm *ProducerManager) startBlock(blockchain *database.BlockChain) chain.Blo
 
 func (pm *ProducerManager) produceBlock(node *Node) error {
 	blockchain := node.BlockChain
+	//headBlockState := blockchain.Head
 	if pm.PendingBlockMode != Producing {
 		fmt.Println("called produce_block while not actually producing")
 		return fmt.Errorf("called produce_block while not actually producing")
@@ -279,8 +282,8 @@ func (pm *ProducerManager) produceBlock(node *Node) error {
 	}
 	blockchain.SignBlock(signer)
 	blockchain.CommitBlock(node.acceptedBlock, true)
-	newBs := blockchain.Head
-	pm.ProducerWaterMarks[newBs.Header.Producer] = blockchain.Head.BlockNum
+	newBlockState := blockchain.Head
+	pm.ProducerWaterMarks[newBlockState.Header.Producer] = blockchain.Head.BlockNum
 	return nil
 }
 
@@ -294,46 +297,34 @@ func (pm *ProducerManager) getIrriversibleBlockAge() uint64 {
 	}
 }
 
-//func (pm *ProducerManager) onBlock(blockState *chain.BlockState) {
-//	if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.lastSignedBlockTime.UnixNano() {
-//		fmt.Println("received block time is invalid")
-//		return
-//	}
-//	if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.startTime.UnixNano() {
-//		fmt.Println("received block time is invalid")
-//		return
-//	}
-//	if blockState.BlockNum <= pm.lastSignedBlockNum {
-//		fmt.Println("received block num is invalid")
-//		return
-//	}
-//	bsActiveProducers := blockState.ActiveSchedule.Producers
-//	activeProducers := []chain.AccountName{}
-//	for _, p := range bsActiveProducers {
-//		activeProducers = append(activeProducers, p.ProducerName)
-//	}
-//	intersect, ok := arrayOperations.Intersect(activeProducers, pm.Producers)
-//	if !ok {
-//		return
-//	}
-//	intersectProducers, ok := intersect.Interface().([]chain.AccountName)
-//	if !ok {
-//		return
-//	}
-//	for _, p := range intersectProducers {
-//		if p != blockState.Header.Producer {
-//			producerKey, err := findProducerName(p, bsActiveProducers)
-//			if err == nil {
-//				if signer, ok := pm.SignatureProviders[producerKey.BlockSigningKey.String()]; ok {
-//					digest := blockState.Digest()
-//					sig := signer(digest)
-//					pm.lastSignedBlockTime = blockState.Header.Timestamp.ToTime()
-//					pm.lastSignedBlockNum = blockState.BlockNum
-//				}
-//			}
-//		}
-//	}
-//}
+func (pm *ProducerManager) onBlock(blockState *chain.BlockState) {
+	//if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.lastSignedBlockTime.UnixNano() {
+	//	fmt.Println("block time is invalid")
+	//	return
+	//}
+	//if blockState.Header.Timestamp.ToTime().UnixNano() <= pm.startTime.UnixNano() {
+	//	fmt.Println("block time is invalid")
+	//	return
+	//}
+	//if blockState.BlockNum <= pm.lastSignedBlockNum {
+	//	fmt.Println("block num is invalid")
+	//	return
+	//}
+	//newBlockHeader := blockState.Header
+	//newBlockHeader.Timestamp = newBlockHeader.Timestamp.Next()
+	//newBlockHeader.Previous = blockState.Id
+	//newBlockState := blockState.GenerateNext(uint64(newBlockHeader.Timestamp.ToTime().UnixNano()))
+	//if newBlockState.MaybePromotePending() && newBlockState.ActiveSchedule.Version != blockState.ActiveSchedule.Version {
+	//	newProducers := []chain.ProducerKey{}
+	//	for _, producer := range newBlockState.ActiveSchedule.Producers {
+	//		if _, err := findProducerName(producer.ProducerName, blockState.ActiveSchedule.Producers); err != nil {
+	//			newProducers = append(newProducers, producer)
+	//			pm.ProducerWaterMarks[producer.ProducerName] = blockState.BlockNum
+	//		}
+	//	}
+	//}
+	//fmt.Println("on block ", pm.ProducerWaterMarks)
+}
 
 func (pm *ProducerManager) onIncomingBlock(signedBlock *chain.SignedBlock, node *Node) {
 	blockchain := node.BlockChain

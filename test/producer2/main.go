@@ -49,6 +49,7 @@ func main() {
 		}
 		producers = append(producers, producerKey)
 		node.AllowPeers = append(node.AllowPeers, producerPub)
+		//node.Producer.ProducerWaterMarks[producerName] = 0
 	}
 	node.BlockChain.SetProposedProducers(producers)
 	node.NetworkVersion = 1
@@ -59,6 +60,6 @@ func main() {
 	node.Producer.Producers = append(node.Producer.Producers, chain.AccountName("producer2"))
 	node.Producer.SignatureProviders[pub.String()] = network.MakeKeySignatureProvider(privateKey.String())
 	done := make(chan bool)
-	node.Start(false)
+	node.Start(true)
 	<- done
 }

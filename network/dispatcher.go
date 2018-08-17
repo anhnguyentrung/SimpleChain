@@ -3,6 +3,7 @@ package network
 import (
 	"blockchain/chain"
 	"time"
+	"fmt"
 )
 
 type BlockRequest struct {
@@ -119,13 +120,26 @@ func (dm *DispatchManager) receiveNotice(c *Connection, node *Node, message Noti
 //}
 
 func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) {
-	var skip *Connection = nil
+	var skips []*Connection = nil
 	for index, org := range dm.ReceivedBlocks {
 		if org.Id == block.Id() {
-			skip = org.Origin
+			skips = append(skips, org.Origin)
 			dm.ReceivedBlocks = append(dm.ReceivedBlocks[:index], dm.ReceivedBlocks[index+1:]...)
-			break
 		}
+	}
+	fmt.Println("skips: ", len(skips))
+	if len(skips) > 0 {
+		noticeMsg := NoticeMessage{}
+		noticeMsg.KnownBlocks.Mode = Normal
+		noticeMsg.KnownBlocks.Ids = append(noticeMsg.KnownBlocks.Ids, block.Id())
+		msg := Message{
+			Header: MessageHeader{
+				Type:Notice,
+				Length:0,
+			},
+			Content: noticeMsg,
+		}
+		node.sendAll(skips, msg)
 	}
 	msg := Message{
 		Header: MessageHeader{
@@ -134,7 +148,7 @@ func (dm *DispatchManager) broadcastBlock(block *chain.SignedBlock, node *Node) 
 		},
 		Content: *block,
 	}
-	node.sendAll(skip, msg)
+	node.sendAll(skips, msg)
 }
 
 func (dm *DispatchManager) receiveBlock(c *Connection, blockId chain.SHA256Type, blockNum uint32) {

@@ -8,6 +8,7 @@ import (
 	"log"
 	bytes2 "bytes"
 	"blockchain/btcsuite/btcd/btcec"
+	"fmt"
 )
 
 type BlockHeader struct {
@@ -74,10 +75,12 @@ type BlockHeaderState struct {
 }
 
 func NewBlockHeaderState() BlockHeaderState {
-	return BlockHeaderState{
+	bhs := BlockHeaderState{
 		ProducerToLastProduced: make(map[AccountName]uint32, 0),
 		ProducerToLastImpliedIRB: make(map[AccountName]uint32, 0),
 	}
+	bhs.Header.Confirmed = 1
+	return bhs
 }
 
 func (bhs *BlockHeaderState) GetScheduledProducer(t uint64) ProducerKey  {
@@ -113,6 +116,7 @@ func (bhs *BlockHeaderState) GenerateNext(when uint64) BlockHeaderState {
 	nextBhs.BFTIrreversibleBlockNum = bhs.BFTIrreversibleBlockNum
 	nextBhs.ProducerToLastImpliedIRB[prokey.ProducerName] = nextBhs.DPOSProposedIrreversibleBlockNum
 	nextBhs.DPOSIrreversibleBlockNum = nextBhs.CalcDposLastIrreversible()
+	//fmt.Println("DPOS irreversible block num ", nextBhs.DPOSIrreversibleBlockNum)
 	numActiveProducers := len(bhs.ActiveSchedule.Producers)
 	requiredConfs := uint32(numActiveProducers*2/3) + 1
 	if len(bhs.ConfirmCount) <= MAXIMUM_TRACKED_DPOS_CONFIRMATIONS {
@@ -188,15 +192,15 @@ func (bhs *BlockHeaderState) CalcDposLastIrreversible() uint32 {
 
 func (bhs *BlockHeaderState) SetConfirmed(numPreBlocks uint16) {
 	bhs.Header.Confirmed = numPreBlocks
-	i := uint32(len(bhs.ConfirmCount)-1)
+	i := int(len(bhs.ConfirmCount)-1)
 	// confirm the head block too
 	blocksToConfirm := numPreBlocks + 1
 	for i >=0 && blocksToConfirm != 0 {
 		bhs.ConfirmCount[i] -= 1
 		if bhs.ConfirmCount[i] == 0 {
-			blockNumForI := bhs.BlockNum - uint32(len(bhs.ConfirmCount)) - 1 - i
-			bhs.DPOSIrreversibleBlockNum = blockNumForI
-			if i == uint32(len(bhs.ConfirmCount)) - 1 {
+			blockNumForI := bhs.BlockNum - uint32(len(bhs.ConfirmCount) - 1 - i)
+			bhs.DPOSProposedIrreversibleBlockNum = blockNumForI
+			if i == len(bhs.ConfirmCount) - 1 {
 				bhs.ConfirmCount = make([]uint8, 0)
 			} else {
 				bhs.ConfirmCount = bhs.ConfirmCount[i+1:]
@@ -206,6 +210,7 @@ func (bhs *BlockHeaderState) SetConfirmed(numPreBlocks uint16) {
 		i -= 1
 		blocksToConfirm -= 1
 	}
+	fmt.Println("confirm count after", blocksToConfirm, bhs.ConfirmCount)
 }
 
 func (bhs *BlockHeaderState) MaybePromotePending() bool {

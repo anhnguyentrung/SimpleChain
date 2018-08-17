@@ -16,16 +16,6 @@ type TransactionObject struct {
 	Expiration time.Time
 }
 
-type ReversibleBlockObject struct {
-	BlockNum uint32
-	PackedBlock []byte
-}
-
-func (rb *ReversibleBlockObject) SetBlock(signedBlock *chain.SignedBlock) {
-	buf, _ := chain.MarshalBinary(*signedBlock)
-	rb.PackedBlock = buf
-}
-
 type GlobalPropertyBlock struct {
 	ProposedScheduleBlockNum *uint32
 	ProposedSchedule *chain.ProducerScheduleType

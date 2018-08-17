@@ -183,6 +183,8 @@ func NewNode (p2pAddress string, suppliedPeers []string) *Node {
 func (node *Node) Start(isProducer bool) {
 	go node.ConnectToPeers()
 	go node.ListenFromPeers()
+	// wait for connecting to peers
+	time.Sleep(time.Millisecond * 500)
 	if isProducer {
 		node.Producer.Startup(node)
 	}
@@ -955,9 +957,18 @@ func (node *Node) findLocalTrx(id chain.SHA256Type) *NodeTransactionState {
 	return foundTrx
 }
 
-func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
+func findConnection(c *Connection, conns[]*Connection) bool {
+	for _, conn := range conns {
+		if conn == c {
+			return true
+		}
+	}
+	return false
+}
+
+func (node *Node) sendAll(ignoredConnection []*Connection, message Message) {
 	for _, c := range node.Conns {
-		if c == ignoredConnection || !c.Connected {
+		if findConnection(c, ignoredConnection) || !c.Connected {
 			continue
 		}
 		c.sendMessage(message)
@@ -966,7 +977,7 @@ func (node *Node) sendAll(ignoredConnection *Connection, message Message) {
 
 func (node *Node) acceptedBlock(block *chain.BlockState) {
 	fmt.Println("accepted block ", block.BlockNum)
-	//node.Producer.onBlock(block)
+	node.Producer.onBlock(block)
 	node.Dispatcher.broadcastBlock(block.Block, node)
 }
 

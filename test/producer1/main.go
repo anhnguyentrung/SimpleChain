@@ -48,6 +48,7 @@ func main() {
 		}
 		producers = append(producers, producerKey)
 		node.AllowPeers = append(node.AllowPeers, producerPub)
+		//node.Producer.ProducerWaterMarks[producerName] = 0
 	}
 	node.BlockChain.SetProposedProducers(producers)
 	node.NetworkVersion = 1

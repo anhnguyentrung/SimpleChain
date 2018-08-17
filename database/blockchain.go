@@ -28,7 +28,7 @@ type PendingState struct {
 type BlockChain struct {
 	Config BlockChainConfig
 	DB Database
-	ReversibleBlocks []*ReversibleBlockObject
+	ReversibleBlocks []*chain.SignedBlock
 	Blog BlockLog
 	Pending *PendingState
 	Head *chain.BlockState
@@ -157,9 +157,9 @@ func (bc *BlockChain) StartBlock(when uint64, confirmBlockCount uint16, s chain.
 	}
 	// generate pending block
 	bc.Pending.BlockStatus = s
-	//fmt.Println("old block id: ", bc.Pending.PendingBlockState.BlockNum)
+	//fmt.Println("old confirm count: ", bc.Head.BlockHeaderState.ConfirmCount)
 	bc.Pending.PendingBlockState = chain.NewBlockState(bc.Head.BlockHeaderState, when)
-	//fmt.Println("next block id: ", bc.Pending.PendingBlockState.BlockNum)
+	//fmt.Println("next confirm count: ", bc.Pending.PendingBlockState.ConfirmCount)
 	bc.Pending.PendingBlockState.InCurrentChain = true
 	bc.Pending.PendingBlockState.SetConfirmed(confirmBlockCount)
 	bc.Pending.PendingBlockState.MaybePromotePending()
@@ -213,6 +213,7 @@ func (bc *BlockChain) CreateBlockSumary(id chain.SHA256Type) {
 
 func (bc *BlockChain) CommitBlock(acceptedBlock func(bs *chain.BlockState), addToForkFB bool) {
 	//fmt.Println("commit block")
+	// add block which this producer has produced to fork database
 	if addToForkFB {
 		bc.Pending.PendingBlockState.Validated = true
 		newBsp := bc.ForkDatabase.Add(bc.Pending.PendingBlockState)
@@ -222,9 +223,8 @@ func (bc *BlockChain) CommitBlock(acceptedBlock func(bs *chain.BlockState), addT
 		}
 	}
 	if !bc.Replaying {
-		ubo := ReversibleBlockObject{}
-		ubo.BlockNum = bc.Pending.PendingBlockState.BlockNum
-		ubo.SetBlock(bc.Pending.PendingBlockState.Block)
+		// append block produced from other producers to reversible blocks
+		bc.ReversibleBlocks = append(bc.ReversibleBlocks, bc.Pending.PendingBlockState.Block)
 	}
 	//fmt.Println("block id: ", bc.Pending.PendingBlockState.BlockNum)
 	acceptedBlock(bc.Pending.PendingBlockState)
@@ -254,6 +254,7 @@ func (bc *BlockChain) PushBlock(signedBlock *chain.SignedBlock, blockStatus chai
 		previousBlock.BlockHeaderState.ActiveSchedule = *bc.DB.GPO.ProposedSchedule
 		previousBlock.BlockHeaderState.PendingSchedule = *bc.DB.GPO.ProposedSchedule
 	}
+	// add signed block to fork database
 	newBlockState, _ := bc.ForkDatabase.AddSignedBlock(signedBlock, trust)
 	if previousBlock != nil && previousBlock.BlockHeaderState.BlockNum == 1 {
 		previousBlock.BlockHeaderState.ActiveSchedule = initialSchedule
@@ -302,10 +303,8 @@ func (bc *BlockChain) switchForks(blockStatus chain.BlockStatus, acceptedBlock f
 func (bc *BlockChain) applyBlock(signedBlock *chain.SignedBlock, blockStatus chain.BlockStatus, acceptedBlock func(bs *chain.BlockState)) {
 	bc.StartBlock(uint64(signedBlock.Timestamp.ToTime().UnixNano()), signedBlock.Confirmed, blockStatus)
 	bc.FinalizeBlock()
-	signer := func(digest chain.SHA256Type) crypto.Signature {
-		return signedBlock.ProducerSignature
-	}
-	bc.SignBlock(signer)
+	bc.Pending.PendingBlockState.Header.ProducerSignature = signedBlock.ProducerSignature
+	bc.Pending.PendingBlockState.Block.SignedBlockHeader = bc.Pending.PendingBlockState.Header
 	bc.CommitBlock(acceptedBlock, false)
 }
 
@@ -317,7 +316,7 @@ func (bc *BlockChain) popBlock() {
 	// remove the block from reversible blocks
 	for index, rbo := range bc.ReversibleBlocks {
 		// find by block num
-		if rbo.BlockNum == bc.Head.BlockNum {
+		if rbo.BlockNum() == bc.Head.BlockNum {
 			bc.ReversibleBlocks = append(bc.ReversibleBlocks[:index], bc.ReversibleBlocks[index+1:]...)
 			break
 		}

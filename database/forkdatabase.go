@@ -30,14 +30,31 @@ func (fb *ForkDatabase) GetBlock(id chain.SHA256Type) *chain.BlockState {
 	return nil
 }
 
+func (fb *ForkDatabase) find(bs *chain.BlockState) bool {
+	for _, b := range fb.BlockStates {
+		if b.BlockNum == bs.BlockNum {
+			return true
+		}
+	}
+	return false
+}
+
 func (fb *ForkDatabase) Add(bs *chain.BlockState) *chain.BlockState {
+	if fb.find(bs) {
+		log.Fatal("block existed in fork database")
+	}
 	fb.BlockStates = append(fb.BlockStates, bs)
 	fb.Head = fb.BlockStates[len(fb.BlockStates) - 1]
+	lib := fb.Head.DPOSIrreversibleBlockNum
+	first := fb.BlockStates[0]
+	if first.BlockNum < lib {
+		// change irreversible block
+	}
 	return bs
 }
 
 func (fb *ForkDatabase) AddSignedBlock(signedBlock *chain.SignedBlock, trust bool) (*chain.BlockState, error) {
-	fmt.Println("add signed block ", signedBlock.BlockNum())
+	//fmt.Println("add signed block ", signedBlock.BlockNum())
 	if signedBlock == nil {
 		fmt.Println("block must not be nil")
 		return nil, fmt.Errorf("block must not be nil")
